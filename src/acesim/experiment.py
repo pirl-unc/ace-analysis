@@ -4,6 +4,7 @@ The purpose of this python3 script is to implement the Experiment dataclas
 
 
 import copy
+import Levenshtein
 import multiprocessing as mp
 import numpy as np
 import pandas as pd
@@ -14,7 +15,6 @@ from functools import partial
 from typing import Dict, List, Tuple
 from acelib.main import run_ace_deconvolve
 from .solver import Solver
-import Levenshtein
 
 
 @dataclass
@@ -481,11 +481,11 @@ class Experiment:
         threshold           :   Threshold (default: None). If None, the threshold is set by default based on whether or not random effects are taken into account.
         alpha               :   Significance level (default: 0.05).  
         """
+        significance = (1 - alpha) * 100
         if method == 'threshold':
             hit_pools = [pool_id for pool_id, spot_count in pool_spot_counts.items() if spot_count >= threshold]
         elif method == 'adaptive':
             assert alpha > 0 and alpha < 1, "alpha must be between 0 and 1."
-            significance = (1 - alpha)*100
             if not self.random_effects:
                 raise ValueError("Adaptive thresholding only works with random effects")
             # Simulate modified DMSO controls
