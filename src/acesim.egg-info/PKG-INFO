@@ -1,6 +1,0 @@
-Metadata-Version: 2.1
-Name: acesim
-Version: 0.0.0.1
-Classifier: Programming Language :: Python :: Implementation :: CPython
-Classifier: Programming Language :: Python :: Implementation :: PyPy
-Requires-Python: >=3.7
