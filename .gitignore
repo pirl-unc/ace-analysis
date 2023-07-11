@@ -9,3 +9,4 @@ notebooks/*.pt
 .pytest_cache/
 **/.DS_Store
 .coverage
+src/acesim.egg-info/

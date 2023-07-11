@@ -1,9 +1,7 @@
 import pandas as pd
 import pkg_resources
 from .data import get_data_path
-from acesim.experiment import Experiment
-from acesim.solver_ace import AceSolver
-from acesim.solver_bogey import BogeySolver
+from acesim import Experiment, AceSolver, BogeySolver
 
 
 def test_experiment_ace():
@@ -26,4 +24,4 @@ def test_experiment_ace():
         peptide_scan=True,
         df_ref_peptides=pd.read_csv(get_data_path(name='iedb_mmer_all.csv'))
     )
-    experiment.run(num_iterations=10)
+    df_results = experiment.run(num_iterations=10)

@@ -114,7 +114,7 @@ class Experiment:
         precision = len(set(positives).intersection(set(hit_peptide_ids))) / len(hit_peptide_ids)
         return sensitivity, specificity, precision
 
-    def run_worker(self, iteration: int) -> dict:
+    def run_worker(self, iteration: int) -> pd.DataFrame:
         """
         Run one iteration of the simulation. Loop through the solvers and
         generate a configuration for each solver. Then, simulate the spot
@@ -130,14 +130,12 @@ class Experiment:
         # Step 3. Generate a configuration for each solver
         list_configurations = []
         for solver in self.solvers:
-            print("Starting SOLVER: %s" % solver.name)
             df_configuration = solver.generate_configuration(
                 df_peptides=df_peptides,
                 num_peptides_per_pool=self.num_peptides_per_pool,
                 num_coverage=self.coverage
             )
             list_configurations.append(df_configuration)
-            print("Finished SOLVER: %s" % solver.name)
 
         # Step 4. Simulate the ELISPOT assay on the Peptide Level (Configuration Independent)
         peptide_spot_counts = self.simulate_peptide_spot_counts(label_dict=label_dict)
@@ -184,7 +182,7 @@ class Experiment:
             results_data['specificity'].append(specificity)
             results_data['precision'].append(precision)
 
-        return results_data
+        return pd.DataFrame(results_data)
         
     def run(self, num_iterations=1) -> pd.DataFrame:
         """
@@ -208,7 +206,9 @@ class Experiment:
         pool.close()
         
         # Postprocess results
-        df_results = pd.DataFrame(results)
+        df_results = pd.DataFrame()
+        for result in results:
+            df_results = pd.concat([df_results, result])
         return df_results
 
     def sample_peptides(self, random_seed: int) -> Tuple[pd.DataFrame, Dict[str, int]]:

@@ -3,12 +3,12 @@
 """
 The purpose of this python3 script is to generate all ACE resource configurations.
 
-Last updated date: July 5, 2023
+Last updated date: July 11, 2023
 """
 
 
 import pandas as pd
-from acelib.main import run_ace_generate
+from acelib.main import run_ace_golfy, run_ace_sat_solver
 
 
 CONFIGURATION_TSV_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/resource_configurations.tsv'
