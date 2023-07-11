@@ -13,7 +13,8 @@ def test_experiment_ace():
         trained_model_file=pkg_resources.resource_filename('acelib', 'resources/models/seq_sim_trained_model.pt')
     )
     bogey_solver = BogeySolver(
-        name='bogey'
+        name='bogey',
+        random_seed=1
     )
     experiment = Experiment(
         num_peptides=25,

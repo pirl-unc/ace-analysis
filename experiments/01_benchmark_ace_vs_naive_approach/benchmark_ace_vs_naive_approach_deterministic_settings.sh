@@ -2,8 +2,8 @@
 
 #SBATCH --time=72:00:00
 #SBATCH -N 1 # Ensure that all cores are on one machine
-#SBATCH -n 66 # Number of cores
-#SBATCH --mem=256G
+#SBATCH -n 96 # Number of cores
+#SBATCH --mem=512G
 #SBATCH --job-name=benchmark-ace-vs-naive-approach
 #SBATCH -o benchmark_ace_vs_naive_approach_deterministic_settings_slurm.out
 

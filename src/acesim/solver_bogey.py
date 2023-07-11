@@ -11,6 +11,7 @@ from .solver import Solver
 
 @dataclass(frozen=True)
 class BogeySolver(Solver):
+    random_seed: int
 
     def generate_configuration(
             self,
@@ -37,6 +38,8 @@ class BogeySolver(Solver):
                                 'peptide_id'
                                 'peptide_sequence'
         """
+        random.seed(self.random_seed)
+
         # Step 1. Initialize pools
         pools = {}
         num_peptides = len(df_peptides['peptide_id'].unique())
@@ -59,7 +62,7 @@ class BogeySolver(Solver):
                         pools['coverage_%i' % i][pool_id].append(peptide_id)
                         break
 
-        # Step 3. Convert assignemtns to a DataFrame
+        # Step 3. Convert assignments to a DataFrame
         data = {
             'coverage_id': [],
             'pool_id': [],

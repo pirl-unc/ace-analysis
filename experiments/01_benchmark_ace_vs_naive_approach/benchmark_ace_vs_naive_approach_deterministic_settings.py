@@ -3,18 +3,19 @@ import pkg_resources
 from acesim import Experiment, AceSolver, BogeySolver
 
 
-NUM_PROCESSES = 64
-NUM_ITERATIONS = 100
+NUM_PROCESSES = 94
+NUM_ITERATIONS = 1000
 REFERENCE_PEPTIDES_CSV_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/iedb_mmer_all.csv'
 CONFIGURATIONS_CSV_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/ace_vs_naive_approach_configurations.csv'
 OUTPUT_DIR = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/processed/01_benchmark_ace_vs_naive_approach'
 
 
 def get_solvers():
+    random_seed = Experiment.generate_random_seed()
     ace_solver_1 = AceSolver(
         name='ace_1',
         cluster_peptides=True,
-        random_seed=Experiment.generate_random_seed(),
+        random_seed=random_seed,
         mode='golfy',
         trained_model_file=pkg_resources.resource_filename('acelib', 'resources/models/seq_sim_trained_model.pt'),
         sim_threshold=0.7,
@@ -25,14 +26,15 @@ def get_solvers():
     ace_solver_2 = AceSolver(
         name='ace_2',
         cluster_peptides=False,
-        random_seed=Experiment.generate_random_seed(),
+        random_seed=random_seed,
         mode='golfy',
         trained_model_file='',
         golfy_max_iters=2000,
         golfy_init_mode='greedy'
     )
     bogey_solver = BogeySolver(
-        name='bogey'
+        name='bogey',
+        random_seed=random_seed
     )
     return [
         ace_solver_1,
@@ -42,6 +44,7 @@ def get_solvers():
 
 if __name__ == "__main__":
     df_experiments = pd.read_csv(CONFIGURATIONS_CSV_FILE)
+    df_experiments = df_experiments.loc[df_experiments['num_peptides'] == 120,:]
     df_results_all = pd.DataFrame()
     print('Started benchmarking ACE vs naive approach')
     for index, row in df_experiments.iterrows():
@@ -58,6 +61,7 @@ if __name__ == "__main__":
             num_peptides=num_peptides,
             num_peptides_per_pool=num_peptides_per_pool,
             coverage=num_coverage,
+            peptide_scan=True,
             num_positives=num_true_positive_peptides,
             solvers=get_solvers(),
             df_ref_peptides=pd.read_csv(REFERENCE_PEPTIDES_CSV_FILE),

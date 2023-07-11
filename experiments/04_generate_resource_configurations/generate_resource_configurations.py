@@ -11,10 +11,11 @@ import pandas as pd
 from acelib.main import run_ace_golfy, run_ace_sat_solver
 
 
-CONFIGURATION_TSV_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/resource_configurations.tsv'
-OUTPUT_DIR = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/processed/01_resource_configurations'
-NUM_PROCESSES = 48
-GOLFY_MAX_ITERS = 100000
+CONFIGURATION_CSV_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/resource_configurations.csv'
+OUTPUT_DIR = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/processed/04_generate_resource_configurations'
+NUM_PROCESSES = 64
+GOLFY_MAX_ITERS = 2000
+GOLFY_INIT_MODE = 'greedy'
 RANDOM_SEED = 42
 NUM_PEPTIDES_PER_BATCH = 100
 
@@ -28,29 +29,48 @@ def generate_peptides_dataframe(num_peptides: int):
 
 
 if __name__ == '__main__':
-    df_configurations = pd.read_csv(CONFIGURATION_TSV_FILE, sep='\t')
+    df_configurations = pd.read_csv(CONFIGURATION_CSV_FILE)
     data = {
-        'num_peptides'
+        'num_peptides': [],
+        'num_peptides_per_pool': [],
+        'num_coverage': [],
+        'optimal': []
     }
-    optimality = []
     for index, value in df_configurations.iterrows():
         num_peptides = value['num_peptides']
         num_peptides_per_pool = value['num_peptides_per_pool']
         num_coverage = value['num_coverage']
         df_peptides = generate_peptides_dataframe(num_peptides=num_peptides)
-        status, df_configuration = run_ace_generate(
-            df_peptides=df_peptides,
-            num_peptides_per_pool=num_peptides_per_pool,
-            num_coverage=num_coverage,
-            num_processes=NUM_PROCESSES,
-            random_seed=RANDOM_SEED,
-            num_peptides_per_batch=NUM_PEPTIDES_PER_BATCH,
-            golfy_max_iters=GOLFY_MAX_ITERS
-        )
+        if num_coverage > 3 or num_peptides_per_pool > 10:
+            is_valid, df_configuration = run_ace_golfy(
+                df_peptides=df_peptides,
+                num_peptides_per_pool=num_peptides_per_pool,
+                num_coverage=num_coverage,
+                random_seed=RANDOM_SEED,
+                max_iters=GOLFY_MAX_ITERS,
+                init_mode=GOLFY_INIT_MODE
+            )
+            data['num_peptides'].append(num_peptides)
+            data['num_peptides_per_pool'].append(num_peptides_per_pool)
+            data['num_coverage'].append(num_coverage)
+            data['optimal'].append(is_valid)
+        else:
+            df_configuration = run_ace_sat_solver(
+                df_peptides=df_peptides,
+                num_peptides_per_pool=num_peptides_per_pool,
+                num_coverage=num_coverage,
+                num_peptides_per_batch=NUM_PEPTIDES_PER_BATCH,
+                random_seed=RANDOM_SEED,
+                num_processes=NUM_PROCESSES
+            )
+            data['num_peptides'].append(num_peptides)
+            data['num_peptides_per_pool'].append(num_peptides_per_pool)
+            data['num_coverage'].append(num_coverage)
+            data['optimal'].append(True)
+
         output_csv_file = '%s/%ipeptides_%iperpool_%ix.csv' % (OUTPUT_DIR, num_peptides, num_peptides_per_pool, num_coverage)
         df_configuration.to_csv(output_csv_file, index=False)
-        optimality.append(status)
 
-    df_configurations['optimality'] = optimality
-    df_configurations.to_csv(OUTPUT_DIR + '/configurations_optimality.csv', index=False)
+    df_run = pd.DataFrame(data)
+    df_run.to_csv(OUTPUT_DIR + '/configurations_optimality.csv', index=False)
 
