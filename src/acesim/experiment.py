@@ -49,7 +49,8 @@ class Experiment:
     # Define the simulation parameters
     df_ref_peptides: pd.DataFrame # reference database
     random_effects: bool = False
-    peptide_scan: bool = False
+    peptide_sampling_method = None # 'levenshtein', 'alanine_scanning', 'sliding_window'
+    peptide_length = 9 # when peptide_sampling_method is 'alanine_scanning" or 'sliding_window'
     mu_immunogenic: float = 100.0
     mu_nonimmunogenic: float = 10.0
     dispersion_factor: float = 1.0
@@ -234,7 +235,11 @@ class Experiment:
                         key = peptide ID.
                         value = label (0 or 1).
         """
-        if self.peptide_scan:
+        if self.peptide_sampling_method is None:
+            # Sample the peptides from the reference dataframe
+            pos_df = self.df_ref_peptides[self.df_ref_peptides['Binding'] == 1].sample(n=self.num_positives, random_state=random_seed)  
+            neg_df = self.df_ref_peptides[self.df_ref_peptides['Binding'] == 0].sample(n=self.num_peptides - self.num_positives, random_state=random_seed)
+        elif self.peptide_sampling_method == 'levenshtein':
             peptides_df = copy.deepcopy(self.df_ref_peptides)
             # Pop a random row from the reference dataframe
             sampled_peptide = peptides_df.sample(n=1, random_state=random_seed)
@@ -245,10 +250,36 @@ class Experiment:
             # Select the top n peptides from the sorted dataframe stratified by immunogenicity
             pos_df = peptides_df[peptides_df['Binding'] == 1].head(self.num_positives)
             neg_df = peptides_df[peptides_df['Binding'] == 0].head(self.num_peptides - self.num_positives)
-        else:
-            # Sample the peptides from the reference dataframe
-            pos_df = self.df_ref_peptides[self.df_ref_peptides['Binding'] == 1].sample(n=self.num_positives, random_state=random_seed)  
-            neg_df = self.df_ref_peptides[self.df_ref_peptides['Binding'] == 0].sample(n=self.num_peptides - self.num_positives, random_state=random_seed)
+        elif self.peptide_sampling_method == 'alanine_scanning':
+            num_pos_ref_peptides = int(self.num_positives / self.peptide_length)
+            num_neg_ref_peptides = int(self.num_peptides / self.peptide_length) - num_pos_ref_peptides
+            pos_df = self.df_ref_peptides[self.df_ref_peptides['Binding'] == 1].sample(n=num_pos_ref_peptides, random_state=random_seed)
+            neg_df = self.df_ref_peptides[self.df_ref_peptides['Binding'] == 0].sample(n=num_neg_ref_peptides, random_state=random_seed)
+            pos_data = {
+                'Epitope': [],
+                'Binding': []
+            }
+            for index, row in pos_df.iterrows():
+                peptide_sequence = row['Epitope']
+                peptide_sequences = Experiment.perform_alanine_scanning(peptide_sequence=peptide_sequence)
+                for peptide_sequence_ in peptide_sequences:
+                    pos_data['Epitope'].append(peptide_sequence_)
+                    pos_data['Binding'].append(1)
+                    peptide_idx += 1
+            pos_df = pd.DataFrame(pos_data)
+            neg_data = {
+                'Epitope': [],
+                'Binding': []
+            }
+            for index, row in neg_df.iterrows():
+                peptide_sequence = row['Epitope']
+                peptide_sequences = Experiment.perform_alanine_scanning(peptide_sequence=peptide_sequence)
+                for peptide_sequence_ in peptide_sequences:
+                    neg_data['Epitope'].append(peptide_sequence_)
+                    neg_data['Binding'].append(0)
+                    peptide_idx += 1
+            neg_df = pd.DataFrame(neg_data)
+
         # Concatenate the positive and negative peptides and shuffle the dataframe
         peptides_df = pd.concat([pos_df, neg_df], axis=0).sample(frac=1.0, random_state=random_seed)
         # Reset the index of the dataframe
@@ -365,6 +396,26 @@ class Experiment:
             r = mean**2/(variance-mean)
             return list(np.random.negative_binomial(r, p, num_samples))
     
+    @staticmethod
+    def perform_alanine_scanning(peptide_sequence: str) -> List[str]:
+        """
+        Performs alanine scanning and returns a list of peptide sequences.
+
+        Parameters
+        ----------
+        peptide_sequence    :   Peptide sequence.
+
+        Returns
+        -------
+        peptide_sequences   :   List of peptide sequences.
+        """
+        peptide_sequences = []
+        for i in range(0, len(peptide_sequence)):
+            peptide_sequence_ = list(peptide_sequence)
+            peptide_sequence_[i] = 'A'
+            peptide_sequences.append(''.join(peptide_sequence_))
+        return peptide_sequences
+
     def simulate_peptide_spot_counts(
             self, 
             label_dict: dict
