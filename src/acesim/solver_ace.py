@@ -7,8 +7,11 @@ import pandas as pd
 import torch
 from dataclasses import dataclass, field
 from .solver import Solver
+from acelib.block_assignment import BlockAssignment
+from acelib.block_design import BlockDesign
 from acelib.main import run_ace_golfy, run_ace_sat_solver
 from acelib.sequence_features import AceNeuralEngine
+from acelib.types import *
 from transformers import AutoTokenizer, AutoModelForMaskedLM
 
 
@@ -22,12 +25,14 @@ class AceSolver(Solver):
     sim_fxn: str = 'euclidean'
     golfy_max_iters: int = 2000
     golfy_init_mode: str = 'greedy'
-    num_processes_per_batch = 100
+    shuffle_iters: int = 100
+    max_peptides_per_block = 100
+    max_peptides_per_pool = 10
     num_processes = 1
 
-    def generate_configuration(
+    def generate_assignment(
             self,
-            df_peptides: pd.DataFrame,
+            peptides: Peptides,
             num_peptides_per_pool: int,
             num_coverage: int
     ) -> pd.DataFrame:
@@ -36,97 +41,65 @@ class AceSolver(Solver):
 
         Parameters
         ----------
-        df_peptides                 :   pd.DataFrame with the following columns:
-                                        'peptide_id'
-                                        'peptide_sequence'
+        peptides                    :   Peptides (list of tuples (peptide ID, peptide sequence)).
         num_peptides_per_pool       :   Number of peptides per pool
         num_coverage                :   Number of coverage.
         
         Returns
         -------
-        df_configuration            :   pd.DataFrame with the following columns:
+        df_assignment               :   pd.DataFrame with the following columns:
                                         'coverage_id'
                                         'pool_id'
                                         'peptide_id'
                                         'peptide_sequence'
         """
+        # Step 1. Identify pairs of similar peptides
+        if self.cluster_peptides:
+            # Load model
+            ESM2_TOKENIZER = AutoTokenizer.from_pretrained("facebook/esm2_t6_8M_UR50D")
+            ESM2_MODEL = AutoModelForMaskedLM.from_pretrained("facebook/esm2_t6_8M_UR50D", return_dict=True, output_hidden_states=True)
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            ace_eng = AceNeuralEngine(ESM2_MODEL, ESM2_TOKENIZER, device)
+            ace_eng.load_weights(self.trained_model_file)
+
+            # Predict similar peptides
+            preferred_peptide_pairs = ace_eng.find_paired_peptides(
+                peptide_ids=[p[0] for p in peptides],
+                peptide_sequences=[p[1] for p in peptides],
+                sim_fxn=self.sim_fxn,
+                threshold=self.sim_threshold
+            )
+        else:
+            preferred_peptide_pairs = []
+        preferred_peptide_pairs = [(p1, p2) for p1, p2, score in preferred_peptide_pairs]
+
+        # Step 2. Generate a block design
+        block_design = BlockDesign(
+            peptides=peptides,
+            num_peptides_per_pool=num_peptides_per_pool,
+            num_coverage=num_coverage,
+            max_peptides_per_block=self.max_peptides_per_block,
+            disallowed_peptide_pairs=[],
+            preferred_peptide_pairs=preferred_peptide_pairs
+        )
+
+        # Step 3. Generate a block assignment
         if self.mode == 'golfy':
-            if self.cluster_peptides:
-                # Load model
-                ESM2_TOKENIZER = AutoTokenizer.from_pretrained("facebook/esm2_t6_8M_UR50D")
-                ESM2_MODEL = AutoModelForMaskedLM.from_pretrained("facebook/esm2_t6_8M_UR50D", return_dict=True, output_hidden_states=True)
-                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-                ace_eng = AceNeuralEngine(ESM2_MODEL, ESM2_TOKENIZER, device)
-                ace_eng.load_weights(self.trained_model_file)
-
-                # Predict similar peptides
-                preferred_peptide_pairs = ace_eng.find_paired_peptides(
-                    peptide_ids=df_peptides['peptide_id'].values.tolist(),
-                    peptide_sequences=df_peptides['peptide_sequence'].values.tolist(),
-                    sim_fxn=self.sim_fxn,
-                    threshold=self.sim_threshold
-                )
-
-                # Run golfy
-                is_valid, df_configuration = run_ace_golfy(
-                    df_peptides=df_peptides,
-                    num_peptides_per_pool=num_peptides_per_pool,
-                    num_coverage=num_coverage,
-                    random_seed=self.random_seed,
-                    max_iters=self.golfy_max_iters,
-                    init_mode=self.golfy_init_mode,
-                    preferred_peptide_pairs=preferred_peptide_pairs
-                )
-            else:
-                # Run golfy
-                is_valid, df_configuration = run_ace_golfy(
-                    df_peptides=df_peptides,
-                    num_peptides_per_pool=num_peptides_per_pool,
-                    num_coverage=num_coverage,
-                    random_seed=self.random_seed,
-                    max_iters=self.golfy_max_iters,
-                    init_mode=self.golfy_init_mode
-                )
-            return df_configuration
+            block_assignment = run_ace_golfy(
+                block_design=block_design,
+                random_seed=self.random_seed,
+                max_iters=self.golfy_max_iters,
+                init_mode=self.golfy_init_mode,
+                verbose=False
+            )
         elif self.mode == 'sat_solver':
-            if self.cluster_peptides:
-                # Load model
-                ESM2_TOKENIZER = AutoTokenizer.from_pretrained("facebook/esm2_t6_8M_UR50D")
-                ESM2_MODEL = AutoModelForMaskedLM.from_pretrained("facebook/esm2_t6_8M_UR50D", return_dict=True, output_hidden_states=True)
-                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-                ace_eng = AceNeuralEngine(ESM2_MODEL, ESM2_TOKENIZER, device)
-                ace_eng.load_weights(self.trained_model_file)
-
-                # Predict similar peptides
-                preferred_peptide_pairs = ace_eng.find_paired_peptides(
-                    peptide_ids=df_peptides['peptide_id'].values.tolist(),
-                    peptide_sequences=df_peptides['peptide_sequence'].values.tolist(),
-                    sim_fxn=self.sim_fxn,
-                    threshold=self.sim_threshold
-                )
-
-                # Run SAT solver
-                df_configuration = run_ace_sat_solver(
-                    df_peptides=df_peptides,
-                    num_peptides_per_pool=num_peptides_per_pool,
-                    num_coverage=num_coverage,
-                    num_peptides_per_batch=self.num_peptides_per_batch,
-                    random_seed=self.random_seed,
-                    num_processes=self.num_processes,
-                    preferred_peptide_pairs=preferred_peptide_pairs
-                )
-            else:
-                # Run SAT solver
-                df_configuration = run_ace_sat_solver(
-                    df_peptides=df_peptides,
-                    num_peptides_per_pool=num_peptides_per_pool,
-                    num_coverage=num_coverage,
-                    num_peptides_per_batch=self.num_peptides_per_batch,
-                    random_seed=self.random_seed,
-                    num_processes=self.num_processes
-                )
-            return df_configuration
+            block_assignment = run_ace_sat_solver(
+                block_design=block_design,
+                max_peptides_per_pool=self.max_peptides_per_pool,
+                num_processes=self.num_processes,
+                verbose=False
+            )
         else:
             print("Unknown mode: %s" % self.mode)
             exit(1)
-    
+        return block_assignment.to_dataframe()

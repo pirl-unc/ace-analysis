@@ -11,12 +11,12 @@ from dataclasses import dataclass
 class Solver:
     name: str
 
-    def generate_configuration(
+    def generate_assignment(
             self,
             df_peptides: pd.DataFrame,
             num_peptides_per_pool: int,
             num_coverage: int,
             **kwargs
     ) -> pd.DataFrame:
-        raise Exception("Subclass must implement 'generate_configuration' method")
+        raise Exception("Subclass must implement 'generate_assignment' method")
 

@@ -13,7 +13,8 @@ import time
 from dataclasses import dataclass, field
 from functools import partial
 from typing import Dict, List, Tuple
-from acelib.main import run_ace_deconvolve
+from acelib.deconvolution import deconvolve_hit_peptides
+from acelib.utilities import convert_dataframe_to_peptides
 from .solver import Solver
 
 
@@ -131,8 +132,8 @@ class Experiment:
         # Step 3. Generate a configuration for each solver
         list_configurations = []
         for solver in self.solvers:
-            df_configuration = solver.generate_configuration(
-                df_peptides=df_peptides,
+            df_configuration = solver.generate_assignment(
+                peptides=convert_dataframe_to_peptides(df_peptides=df_peptides),
                 num_peptides_per_pool=self.num_peptides_per_pool,
                 num_coverage=self.coverage
             )
@@ -311,14 +312,14 @@ class Experiment:
         """
         return Levenshtein.distance(seq1, seq2)
     
-    def generate_configuration(
+    def generate_assignment(
             self, 
             solver: Solver, 
             df_peptides: pd.DataFrame,
             **kwargs
     ) -> pd.DataFrame:
         """
-        Calls the solver's generate_configuration method to generate a configuration
+        Calls the solver's generate_assignment method to generate a configuration
         of peptide pools to be used in the experiment.
 
         Parameters
@@ -335,8 +336,8 @@ class Experiment:
                                 'pool_id'
                                 'peptide_id'
         """
-        return solver.generate_configuration(
-            df_peptides=df_peptides,
+        return solver.generate_assignment(
+            peptides=convert_dataframe_to_peptides(df_peptides=df_peptides),
             num_peptides_per_pool=self.num_peptides_per_pool,
             num_coverage=self.coverage,
             kwargs=kwargs
@@ -500,16 +501,16 @@ class Experiment:
         peptide_spot_counts = copy.deepcopy(peptide_spot_counts)
         pool_spot_counts = {i:0 for i in df_configuration['pool_id'].unique()}
         
-        for pool_id in df_configuration['pool_id'].unique():
-            pool_df = df_configuration[df_configuration['pool_id']==pool_id]
+        for pool in df_configuration['pool_id'].unique():
+            pool_df = df_configuration[df_configuration['pool_id'] == pool]
             for peptide_id in pool_df['peptide_id']:
-                pool_spot_counts[pool_id] += peptide_spot_counts[peptide_id][0].pop(-1)
+                pool_spot_counts[pool] += peptide_spot_counts[peptide_id][0].pop(-1)
                 
         return pool_spot_counts
     
     def deconvolve_hit_pools(
             self, 
-            pool_spot_counts: Dict[str, int], 
+            pool_spot_counts: Dict[int, int], 
             method,
             threshold,
             alpha=0.05
@@ -555,8 +556,8 @@ class Experiment:
 
     def deconvolve_hit_peptides(
             self,
-            hit_pool_ids: List[str],
-            df_configuration: pd.DataFrame,
+            hit_pool_ids: List[int],
+            df_assignment: pd.DataFrame,
             min_coverage: int
     ) -> pd.DataFrame:
         """
@@ -581,10 +582,11 @@ class Experiment:
                                 'num_coverage'
                                 'deconvolution_result'
         """
-        return run_ace_deconvolve(
+        deconvolution_result = deconvolve_hit_peptides(
             hit_pool_ids=hit_pool_ids,
-            df_configuration=df_configuration,
-            min_coverage=min_coverage
+            df_assignment=df_assignment,
+            num_coverage=min_coverage
         )
+        return deconvolution_result.to_dataframe()
         
     
