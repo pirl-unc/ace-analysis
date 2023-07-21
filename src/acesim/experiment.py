@@ -166,7 +166,7 @@ class Experiment:
             )
             df_hits = self.deconvolve_hit_peptides(
                 hit_pool_ids=hit_pool_ids,
-                df_configuration=df_configuration,
+                df_assignment=df_configuration,
                 min_coverage=self.coverage
             )
             candidate_peptide_ids = df_hits.loc[df_hits['deconvolution_result'] == 'candidate_hit','peptide_id'].values.tolist()
@@ -266,7 +266,6 @@ class Experiment:
                 for peptide_sequence_ in peptide_sequences:
                     pos_data['Epitope'].append(peptide_sequence_)
                     pos_data['Binding'].append(1)
-                    peptide_idx += 1
             pos_df = pd.DataFrame(pos_data)
             neg_data = {
                 'Epitope': [],
@@ -278,7 +277,6 @@ class Experiment:
                 for peptide_sequence_ in peptide_sequences:
                     neg_data['Epitope'].append(peptide_sequence_)
                     neg_data['Binding'].append(0)
-                    peptide_idx += 1
             neg_df = pd.DataFrame(neg_data)
 
         # Concatenate the positive and negative peptides and shuffle the dataframe

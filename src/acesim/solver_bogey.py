@@ -49,7 +49,7 @@ class BogeySolver(Solver):
         for coverage in range(1, num_coverage + 1):
             pools[coverage] = {}
             for j in range(1, num_pools_per_coverage + 1):
-                pool = num_pools_per_coverage * (i - 1) + j
+                pool = num_pools_per_coverage * (coverage - 1) + j
                 pools[coverage][pool] = []
 
         # Step 2. Randomly assign peptides to pools

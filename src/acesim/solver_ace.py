@@ -97,7 +97,7 @@ class AceSolver(Solver):
                 block_design=block_design,
                 max_peptides_per_pool=self.max_peptides_per_pool,
                 num_processes=self.num_processes,
-                verbose=False
+                verbose=True
             )
         else:
             print("Unknown mode: %s" % self.mode)
