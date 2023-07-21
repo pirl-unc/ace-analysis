@@ -1,10 +1,9 @@
 import pandas as pd
-import pkg_resources
 from acesim import Experiment, AceSolver, BogeySolver
 
 
-NUM_PROCESSES = 94
-NUM_ITERATIONS = 1000
+NUM_PROCESSES = 64
+NUM_ITERATIONS = 100
 REFERENCE_PEPTIDES_CSV_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/iedb_mmer_all.csv'
 CONFIGURATIONS_CSV_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/ace_vs_naive_approach_configurations.csv'
 OUTPUT_DIR = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/processed/01_benchmark_ace_vs_naive_approach'
@@ -17,7 +16,7 @@ def get_solvers():
         cluster_peptides=True,
         random_seed=random_seed,
         mode='golfy',
-        trained_model_file=pkg_resources.resource_filename('acelib', 'resources/models/seq_sim_trained_model.pt'),
+        trained_model_file='/Users/leework/Documents/Research/projects/project_ace/scripts/ace-analysis/notebooks/models/seq_sim_trained_model.pt',
         sim_threshold=0.7,
         sim_fxn='euclidean',
         golfy_max_iters=2000,
@@ -27,10 +26,8 @@ def get_solvers():
         name='ace_2',
         cluster_peptides=False,
         random_seed=random_seed,
-        mode='golfy',
-        trained_model_file='',
-        golfy_max_iters=2000,
-        golfy_init_mode='greedy'
+        mode='sat_solver',
+        trained_model_file=''
     )
     bogey_solver = BogeySolver(
         name='bogey',

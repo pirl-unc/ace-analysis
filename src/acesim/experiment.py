@@ -37,6 +37,8 @@ class Experiment:
     6. Use the candidate + hit peptides list to run the deconvolution
     7. Return statistics on the deconvolution results
     """
+    # Experiment ID
+    experiment_id: int
     
     # Define the assay parameters
     num_peptides: int
@@ -116,7 +118,7 @@ class Experiment:
         precision = len(set(positives).intersection(set(hit_peptide_ids))) / len(hit_peptide_ids)
         return sensitivity, specificity, precision
 
-    def run_worker(self, iteration: int) -> pd.DataFrame:
+    def run_worker(self, iteration: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Run one iteration of the simulation. Loop through the solvers and
         generate a configuration for each solver. Then, simulate the spot
@@ -128,34 +130,53 @@ class Experiment:
         
         # Step 2. Sample the peptides. Return a dataframe ids and sequences and ids:labels dict
         df_peptides, label_dict = self.sample_peptides(random_seed=random_seed)
+        positive_label_indices = [idx for idx, v in enumerate(label_dict.values()) if v == 1]
+        df_positive_peptides = df_peptides.iloc[positive_label_indices]
+        positive_peptide_sequences = df_positive_peptides['peptide_sequence']
+        peptides = convert_dataframe_to_peptides(df_peptides=df_peptides)
 
-        # Step 3. Generate a configuration for each solver
-        list_configurations = []
+        # Step 3. Generate an assignment from each solver
+        list_block_assignments = []
+        list_preferred_peptides_pairs = []
         for solver in self.solvers:
-            df_configuration = solver.generate_assignment(
+            block_assignment, preferred_peptide_pairs = solver.generate_assignment(
                 peptides=convert_dataframe_to_peptides(df_peptides=df_peptides),
                 num_peptides_per_pool=self.num_peptides_per_pool,
                 num_coverage=self.coverage
             )
-            list_configurations.append(df_configuration)
+            list_block_assignments.append(block_assignment)
+            list_preferred_peptides_pairs.append(preferred_peptide_pairs)
 
         # Step 4. Simulate the ELISPOT assay on the Peptide Level (Configuration Independent)
         peptide_spot_counts = self.simulate_peptide_spot_counts(label_dict=label_dict)
 
         # Step 5. Evaluate each solver
         results_data = {
+            'experiment_id': [],
             'iteration': [],
+            'peptides': [],
+            'num_peptides': [],
+            'num_peptides_per_pool': [],
+            'num_coverage': [],
+            'num_pools': [],
             'solver': [],
-            'num_total_pools': [],
+            'preferred_peptide_pairs': [],
+            'predicted_total_pools': [],
+            'num_violations': [],
+            'num_positive_peptide_sequences': [],
+            'positive_peptide_sequences': [],
             'sensitivity': [],
             'specificity': [],
             'precision': []
         }
-        for i in range(0, len(list_configurations)):
-            df_configuration = list_configurations[i]
+        df_assignments = pd.DataFrame()
+        for i in range(0, len(list_block_assignments)):
+            curr_block_assignment = list_block_assignments[i]
+            df_assignment = list_block_assignments[i].to_dataframe()
             solver = self.solvers[i]
+            preferred_peptide_pairs = list_preferred_peptides_pairs[i]
             pool_spot_counts = self.aggregate_pool_spot_counts(
-                df_configuration=df_configuration, 
+                df_configuration=df_assignment,
                 peptide_spot_counts=peptide_spot_counts
             )
             hit_pool_ids = self.deconvolve_hit_pools(
@@ -166,27 +187,41 @@ class Experiment:
             )
             df_hits = self.deconvolve_hit_peptides(
                 hit_pool_ids=hit_pool_ids,
-                df_assignment=df_configuration,
+                df_assignment=df_assignment,
                 min_coverage=self.coverage
             )
             candidate_peptide_ids = df_hits.loc[df_hits['deconvolution_result'] == 'candidate_hit','peptide_id'].values.tolist()
-            num_total_pools_solver = len(df_configuration['pool_id'].unique()) + len(candidate_peptide_ids)
+            num_total_pools_solver = len(df_assignment['pool_id'].unique()) + len(candidate_peptide_ids)
             sensitivity, specificity, precision = self.evaluate_deconvolution(
                 hit_peptide_ids=df_hits['peptide_id'].values.tolist(),
                 label_dict=label_dict
             )
 
-            # Append results to results_data dict for that solver
+            # Append results to results_data dict
+            results_data['experiment_id'].append(self.experiment_id)
             results_data['iteration'].append(iteration)
             results_data['solver'].append(solver.name)
-            results_data['num_total_pools'].append(num_total_pools_solver)
+            results_data['peptides'].append(';'.join(['%s,%s' % (peptide_id, peptide_sequence) for peptide_id, peptide_sequence in peptides]))
+            results_data['num_peptides'].append(len(peptides))
+            results_data['num_peptides_per_pool'].append(self.num_peptides_per_pool)
+            results_data['num_coverage'].append(self.coverage)
+            results_data['num_pools'].append(len(df_assignment['pool_id'].unique()))
+            results_data['preferred_peptide_pairs'].append(';'.join(['%s,%s' % (peptide_id, peptide_sequence) for peptide_id, peptide_sequence in preferred_peptide_pairs]))
+            results_data['predicted_total_pools'].append(num_total_pools_solver)
+            results_data['num_violations'].append(curr_block_assignment.num_violations())
+            results_data['num_positive_peptide_sequences'].append(len(positive_peptide_sequences))
+            results_data['positive_peptide_sequences'].append(';'.join(positive_peptide_sequences))
             results_data['sensitivity'].append(sensitivity)
             results_data['specificity'].append(specificity)
             results_data['precision'].append(precision)
 
-        return pd.DataFrame(results_data)
+            df_assignment['experiment_id'] = [self.experiment_id] * len(df_assignment)
+            df_assignment['iteration'] = [iteration] * len(df_assignment)
+            df_assignment['solver'] = [solver.name] * len(df_assignment)
+            df_assignments = pd.concat([df_assignments, df_assignment])
+        return pd.DataFrame(results_data), df_assignments
         
-    def run(self, num_iterations=1) -> pd.DataFrame:
+    def run(self, num_iterations=1) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Runs an ELISpot simulation.
 
@@ -208,10 +243,12 @@ class Experiment:
         pool.close()
         
         # Postprocess results
-        df_results = pd.DataFrame()
-        for result in results:
-            df_results = pd.concat([df_results, result])
-        return df_results
+        df_results_all = pd.DataFrame()
+        df_assignments_all = pd.DataFrame()
+        for df_results, df_assignments in results:
+            df_results_all = pd.concat([df_results_all, df_results])
+            df_assignments_all = pd.concat([df_assignments_all, df_assignments])
+        return df_results_all, df_assignments_all
 
     def sample_peptides(self, random_seed: int) -> Tuple[pd.DataFrame, Dict[str, int]]:
         """
@@ -497,7 +534,7 @@ class Experiment:
         #for pool_id in df_configuration['pool_id'].unique():                    
 
         peptide_spot_counts = copy.deepcopy(peptide_spot_counts)
-        pool_spot_counts = {i:0 for i in df_configuration['pool_id'].unique()}
+        pool_spot_counts = {i: 0 for i in df_configuration['pool_id'].unique()}
         
         for pool in df_configuration['pool_id'].unique():
             pool_df = df_configuration[df_configuration['pool_id'] == pool]

@@ -25,7 +25,7 @@ class AceSolver(Solver):
     sim_fxn: str = 'euclidean'
     golfy_max_iters: int = 2000
     golfy_init_mode: str = 'greedy'
-    shuffle_iters: int = 100
+    golfy_allow_extra_pools: bool = False
     max_peptides_per_block = 100
     max_peptides_per_pool = 10
     num_processes = 1
@@ -35,7 +35,7 @@ class AceSolver(Solver):
             peptides: Peptides,
             num_peptides_per_pool: int,
             num_coverage: int
-    ) -> pd.DataFrame:
+    ) -> Tuple[BlockAssignment, PeptidePairs]:
         """
         Generates an ELISpot configuration.
 
@@ -47,11 +47,8 @@ class AceSolver(Solver):
         
         Returns
         -------
-        df_assignment               :   pd.DataFrame with the following columns:
-                                        'coverage_id'
-                                        'pool_id'
-                                        'peptide_id'
-                                        'peptide_sequence'
+        block_assignment            :   BlockAssignment object.
+        preferred_peptide_pairs     :   PeptidePairs.
         """
         # Step 1. Identify pairs of similar peptides
         if self.cluster_peptides:
@@ -90,6 +87,7 @@ class AceSolver(Solver):
                 random_seed=self.random_seed,
                 max_iters=self.golfy_max_iters,
                 init_mode=self.golfy_init_mode,
+                allow_extra_pools=self.golfy_allow_extra_pools,
                 verbose=False
             )
         elif self.mode == 'sat_solver':
@@ -102,4 +100,4 @@ class AceSolver(Solver):
         else:
             print("Unknown mode: %s" % self.mode)
             exit(1)
-        return block_assignment.to_dataframe()
+        return block_assignment, preferred_peptide_pairs

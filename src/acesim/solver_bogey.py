@@ -6,6 +6,7 @@ The purpose of this python3 script is to implement the Bogey dataclass
 import random
 import pandas as pd
 from dataclasses import dataclass, field
+from acelib.block_assignment import BlockAssignment
 from acelib.utilities import convert_peptides_to_dataframe
 from acelib.types import *
 from .solver import Solver
@@ -20,7 +21,7 @@ class BogeySolver(Solver):
             peptides: Peptides,
             num_peptides_per_pool: int,
             num_coverage: int
-    ) -> pd.DataFrame:
+    ) -> Tuple[BlockAssignment, PeptidePairs]:
         """
         Randomly generates an ELISpot configuration.
 
@@ -32,11 +33,8 @@ class BogeySolver(Solver):
 
         Returns
         -------
-        df_configuration    :   pd.DataFrame with the following columns:
-                                'coverage_id'
-                                'pool_id'
-                                'peptide_id'
-                                'peptide_sequence'
+        block_assignment            :   BlockAssignment object.
+        preferred_peptide_pairs     :   PeptidePairs.
         """
         random.seed(self.random_seed)
         df_peptides = convert_peptides_to_dataframe(peptides=peptides)
@@ -63,19 +61,16 @@ class BogeySolver(Solver):
                         pools[coverage][pool].append(peptide_id)
                         break
 
-        # Step 3. Convert assignments to a DataFrame
-        data = {
-            'coverage_id': [],
-            'pool_id': [],
-            'peptide_id': [],
-            'peptide_sequence': []
-        }
+        # Step 3. Create a BlockAssignment object
+        block_assignment = BlockAssignment()
         for coverage, value in pools.items():
             for pool, value2 in value.items():
                 for peptide_id in value2:
                     df_curr_peptide = df_peptides.loc[df_peptides['peptide_id'] == peptide_id,:]
-                    data['coverage_id'].append(coverage)
-                    data['pool_id'].append(pool)
-                    data['peptide_id'].append(peptide_id)
-                    data['peptide_sequence'].append(df_curr_peptide['peptide_sequence'].values[0])
-        return pd.DataFrame(data)
+                    block_assignment.add_peptide(
+                        coverage=coverage,
+                        pool=pool,
+                        peptide_id=peptide_id,
+                        peptide_sequence=df_curr_peptide['peptide_sequence'].values[0]
+                    )
+        return block_assignment, []
