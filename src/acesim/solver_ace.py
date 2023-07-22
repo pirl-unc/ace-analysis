@@ -26,9 +26,9 @@ class AceSolver(Solver):
     golfy_max_iters: int = 2000
     golfy_init_mode: str = 'greedy'
     golfy_allow_extra_pools: bool = False
-    max_peptides_per_block = 100
-    max_peptides_per_pool = 10
-    num_processes = 1
+    max_peptides_per_block: int = 100
+    max_peptides_per_pool: int = 10
+    num_processes: int = 1
 
     def generate_assignment(
             self,

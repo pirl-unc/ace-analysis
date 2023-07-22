@@ -52,8 +52,8 @@ class Experiment:
     # Define the simulation parameters
     df_ref_peptides: pd.DataFrame # reference database
     random_effects: bool = False
-    peptide_sampling_method = None # 'levenshtein', 'alanine_scanning', 'sliding_window'
-    peptide_length = 9 # when peptide_sampling_method is 'alanine_scanning" or 'sliding_window'
+    peptide_sampling_method: str = '' # 'levenshtein', 'alanine_scanning', 'sliding_window'
+    peptide_length: int = 9 # when peptide_sampling_method is 'alanine_scanning" or 'sliding_window'
     mu_immunogenic: float = 100.0
     mu_nonimmunogenic: float = 10.0
     dispersion_factor: float = 1.0
@@ -273,7 +273,7 @@ class Experiment:
                         key = peptide ID.
                         value = label (0 or 1).
         """
-        if self.peptide_sampling_method is None:
+        if self.peptide_sampling_method == '':
             # Sample the peptides from the reference dataframe
             pos_df = self.df_ref_peptides[self.df_ref_peptides['Binding'] == 1].sample(n=self.num_positives, random_state=random_seed)  
             neg_df = self.df_ref_peptides[self.df_ref_peptides['Binding'] == 0].sample(n=self.num_peptides - self.num_positives, random_state=random_seed)
