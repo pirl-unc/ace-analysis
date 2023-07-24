@@ -35,3 +35,36 @@ def test_experiment_1():
 
     # Run experiment
     experiment.run(10)
+
+
+def test_experiment_2():
+    # Instantiate solvers
+    ace_solver = AceSolver(
+        name='ace',
+        cluster_peptides=True,
+        random_seed=42,
+        mode='golfy',
+        trained_model_file=get_data_path(name='seq_sim_trained_model.pt')
+    )
+
+    # Instantiate experiment
+    experiment = Experiment(
+        experiment_id=1,
+        num_peptides=90,
+        num_positives=9,
+        num_peptides_per_pool=9,
+        coverage=3,
+        solvers=[ace_solver],
+        random_effects=False,
+        df_ref_peptides=pd.read_csv(get_data_path(name='iedb_mmer_all.csv')),
+        mu_immunogenic=100.0,
+        mu_nonimmunogenic=10.0,
+        dispersion_factor=2.0,
+        method='threshold',
+        peptide_sampling_method='alanine_scanning',
+        alpha=0.05,
+        num_processes=1
+    )
+
+    # Run experiment
+    experiment.run(10)

@@ -289,10 +289,12 @@ class Experiment:
             pos_df = peptides_df[peptides_df['Binding'] == 1].head(self.num_positives)
             neg_df = peptides_df[peptides_df['Binding'] == 0].head(self.num_peptides - self.num_positives)
         elif self.peptide_sampling_method == 'alanine_scanning':
+            length_filter_mask = (self.df_ref_peptides['Epitope'].str.len() == self.peptide_length)
+            length_filtered_df_ref_peptides = self.df_ref_peptides.loc[length_filter_mask]
             num_pos_ref_peptides = int(self.num_positives / self.peptide_length)
             num_neg_ref_peptides = int(self.num_peptides / self.peptide_length) - num_pos_ref_peptides
-            pos_df = self.df_ref_peptides[self.df_ref_peptides['Binding'] == 1].sample(n=num_pos_ref_peptides, random_state=random_seed)
-            neg_df = self.df_ref_peptides[self.df_ref_peptides['Binding'] == 0].sample(n=num_neg_ref_peptides, random_state=random_seed)
+            pos_df = length_filtered_df_ref_peptides[length_filtered_df_ref_peptides['Binding'] == 1].sample(n=num_pos_ref_peptides, random_state=random_seed)
+            neg_df = length_filtered_df_ref_peptides[length_filtered_df_ref_peptides['Binding'] == 0].sample(n=num_neg_ref_peptides, random_state=random_seed)
             pos_data = {
                 'Epitope': [],
                 'Binding': []

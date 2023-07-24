@@ -3,7 +3,7 @@ import random
 from acesim import Experiment, AceSolver, BogeySolver
 
 
-NUM_PROCESSES = 64
+NUM_PROCESSES = 6
 NUM_ITERATIONS = 100
 REFERENCE_PEPTIDES_CSV_FILE = '/Users/leework/Documents/Research/projects/project_ace/scripts/ace-analysis/test/data/iedb_mmer_all.csv'
 OUTPUT_DIR = '/Users/leework/Documents/Research/projects/project_ace/data/processed/01_benchmark_ace_vs_naive_approach'
