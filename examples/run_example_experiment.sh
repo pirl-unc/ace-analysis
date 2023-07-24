@@ -5,6 +5,6 @@
 #SBATCH -n 64 # Number of cores
 #SBATCH --mem=256G
 #SBATCH --job-name=run-example-experiment
-#SBATCH -o run_example_experiment_slurm.out
+#SBATCH -o run_example_experiment_slurm-%A_%a.out
 
 python run_example_experiment.py
