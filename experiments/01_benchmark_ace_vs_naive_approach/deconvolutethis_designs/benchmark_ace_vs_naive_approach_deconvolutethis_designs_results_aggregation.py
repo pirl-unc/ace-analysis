@@ -19,6 +19,6 @@ if __name__ == "__main__":
         df = pd.read_csv(tsv_file, sep='\t')
         df.drop(columns=['preferred_peptide_pairs', 'positive_peptide_sequences'], inplace=True)
         df_all = pd.concat([df_all, df])
-    df_all.to_csv(OUTPUT_DIR + '/ace_vs_naive_approach_benchmark_experiment_results_merged.tsv',
+    df_all.to_csv(OUTPUT_DIR + '/ace_vs_naive_approach_benchmark_experiment_deconvolutethis_designs_results_merged.tsv',
                   index=False,
                   sep='\t')

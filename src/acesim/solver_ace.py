@@ -29,6 +29,7 @@ class AceSolver(Solver):
     max_peptides_per_block: int = 100
     max_peptides_per_pool: int = 10
     num_processes: int = 1
+    verbose: bool = False
 
     def generate_assignment(
             self,
@@ -88,14 +89,14 @@ class AceSolver(Solver):
                 max_iters=self.golfy_max_iters,
                 init_mode=self.golfy_init_mode,
                 allow_extra_pools=self.golfy_allow_extra_pools,
-                verbose=False
+                verbose=self.verbose
             )
         elif self.mode == 'sat_solver':
             block_assignment = run_ace_sat_solver(
                 block_design=block_design,
                 max_peptides_per_pool=self.max_peptides_per_pool,
                 num_processes=self.num_processes,
-                verbose=True
+                verbose=self.verbose
             )
         else:
             print("Unknown mode: %s" % self.mode)
