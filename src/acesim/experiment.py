@@ -5,6 +5,7 @@ The purpose of this python3 script is to implement the Experiment dataclas
 
 import copy
 import Levenshtein
+import math
 import multiprocessing as mp
 import numpy as np
 import pandas as pd
@@ -275,7 +276,7 @@ class Experiment:
         """
         if self.peptide_sampling_method == '':
             # Sample the peptides from the reference dataframe
-            pos_df = self.df_ref_peptides[self.df_ref_peptides['Binding'] == 1].sample(n=self.num_positives, random_state=random_seed)  
+            pos_df = self.df_ref_peptides[self.df_ref_peptides['Binding'] == 1].sample(n=self.num_positives, random_state=random_seed)
             neg_df = self.df_ref_peptides[self.df_ref_peptides['Binding'] == 0].sample(n=self.num_peptides - self.num_positives, random_state=random_seed)
         elif self.peptide_sampling_method == 'levenshtein':
             peptides_df = copy.deepcopy(self.df_ref_peptides)
@@ -291,7 +292,7 @@ class Experiment:
         elif self.peptide_sampling_method == 'alanine_scanning':
             length_filter_mask = (self.df_ref_peptides['Epitope'].str.len() == self.peptide_length)
             length_filtered_df_ref_peptides = self.df_ref_peptides.loc[length_filter_mask]
-            num_pos_ref_peptides = int(self.num_positives / self.peptide_length)
+            num_pos_ref_peptides = math.ceil(self.num_positives / self.peptide_length)
             num_neg_ref_peptides = int(self.num_peptides / self.peptide_length) - num_pos_ref_peptides
             pos_df = length_filtered_df_ref_peptides[length_filtered_df_ref_peptides['Binding'] == 1].sample(n=num_pos_ref_peptides, random_state=random_seed)
             neg_df = length_filtered_df_ref_peptides[length_filtered_df_ref_peptides['Binding'] == 0].sample(n=num_neg_ref_peptides, random_state=random_seed)

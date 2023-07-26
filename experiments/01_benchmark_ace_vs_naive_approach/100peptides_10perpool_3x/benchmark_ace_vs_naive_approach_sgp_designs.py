@@ -7,9 +7,9 @@ from acesim import Experiment, AceSolver, BogeySolver
 NUM_PROCESSES = 8
 NUM_ITERATIONS = 100
 REFERENCE_PEPTIDES_CSV_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/iedb_mmer_all.csv'
-DESIGNS_CSV_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/ace_vs_naive_approach_sgp.csv'
+DESIGNS_CSV_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/ace_vs_naive_approach_sgp_designs.csv'
 TRAINED_MODEL_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/seq_sim_trained_model.pt'
-OUTPUT_DIR = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/processed/01_benchmark_ace_vs_naive_approach/sgp'
+OUTPUT_DIR = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/processed/01_benchmark_ace_vs_naive_approach/sgp_designs'
 GOLFY_INIT_MODE = 'greedy'
 GOLFY_MAX_ITERS = 2000
 SAT_SOLVER_NUM_PROCESSES = 8
@@ -28,6 +28,16 @@ def get_solvers():
         golfy_allow_extra_pools=True
     )
     ace_solver_2 = AceSolver(
+        name='ace_golfy_clusteroff_noextrapools',
+        cluster_peptides=False,
+        random_seed=random_seed,
+        mode='golfy',
+        trained_model_file='',
+        golfy_max_iters=GOLFY_MAX_ITERS,
+        golfy_init_mode=GOLFY_INIT_MODE,
+        golfy_allow_extra_pools=False
+    )
+    ace_solver_3 = AceSolver(
         name='ace_sat_solver_clusteroff',
         cluster_peptides=False,
         random_seed=random_seed,
@@ -44,6 +54,7 @@ def get_solvers():
     return [
         ace_solver_1,
         ace_solver_2,
+        ace_solver_3,
         bogey_solver
     ]
 

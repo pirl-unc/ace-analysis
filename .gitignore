@@ -3,6 +3,7 @@ dist/
 build/
 __pycache__/
 notebooks/*.pt
+examples/*.tsv
 *.pyc
 .coverage*
 *.DS_Store

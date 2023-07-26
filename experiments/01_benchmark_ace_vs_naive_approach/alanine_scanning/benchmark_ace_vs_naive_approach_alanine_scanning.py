@@ -1,10 +1,10 @@
 import pandas as pd
 import os
 import random
-from acesim import Experiment, AceSolver, BogeySolver
+from acesim import Experiment, AceSolver, RandomizedAssignmentSolver
 
 
-NUM_PROCESSES = 64
+NUM_PROCESSES = 24
 NUM_ITERATIONS = 100
 REFERENCE_PEPTIDES_CSV_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/iedb_mmer_all.csv'
 DESIGNS_CSV_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/ace_vs_naive_approach_alanine_scanning_designs.csv'
@@ -38,14 +38,14 @@ def get_solvers():
         golfy_init_mode=GOLFY_INIT_MODE,
         golfy_allow_extra_pools=False
     )
-    bogey_solver = BogeySolver(
-        name='naive_approach',
+    random_solver = RandomizedAssignmentSolver(
+        name='randomized_block_assignment',
         random_seed=random_seed
     )
     return [
         ace_solver_1,
         ace_solver_2,
-        bogey_solver
+        random_solver
     ]
 
 

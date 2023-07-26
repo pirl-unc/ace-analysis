@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 from .data import get_data_path
 from acesim.solver_ace import AceSolver
+from acesim.solver_randomized_design import RandomizedDesignSolver
+from acesim.solver_repeated_design import RepeatedDesignSolver
 from acesim.experiment import Experiment
 
 
@@ -14,6 +16,8 @@ def test_experiment_1():
         mode='golfy',
         trained_model_file=get_data_path(name='seq_sim_trained_model.pt')
     )
+    randomized_solver = RandomizedDesignSolver(name='random', random_seed=1)
+    repeated_solver = RepeatedDesignSolver(name='repeated')
     
     # Instantiate experiment
     experiment = Experiment(
@@ -22,7 +26,7 @@ def test_experiment_1():
         num_positives=5,
         num_peptides_per_pool=5,
         coverage=3,
-        solvers=[ace_solver],
+        solvers=[ace_solver, randomized_solver, repeated_solver],
         random_effects=False,
         df_ref_peptides=pd.read_csv(get_data_path(name='iedb_mmer_all.csv')),
         mu_immunogenic=100.0,
@@ -46,6 +50,8 @@ def test_experiment_2():
         mode='golfy',
         trained_model_file=get_data_path(name='seq_sim_trained_model.pt')
     )
+    randomized_solver = RandomizedDesignSolver(name='random', random_seed=1)
+    repeated_solver = RepeatedDesignSolver(name='repeated')
 
     # Instantiate experiment
     experiment = Experiment(
@@ -54,7 +60,7 @@ def test_experiment_2():
         num_positives=9,
         num_peptides_per_pool=9,
         coverage=3,
-        solvers=[ace_solver],
+        solvers=[ace_solver, randomized_solver, repeated_solver],
         random_effects=False,
         df_ref_peptides=pd.read_csv(get_data_path(name='iedb_mmer_all.csv')),
         mu_immunogenic=100.0,

@@ -13,7 +13,7 @@ from .solver import Solver
 
 
 @dataclass(frozen=True)
-class BogeySolver(Solver):
+class RandomizedDesignSolver(Solver):
     random_seed: int
 
     def generate_assignment(

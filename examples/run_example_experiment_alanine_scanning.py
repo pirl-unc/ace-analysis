@@ -1,12 +1,11 @@
 import pandas as pd
 import random
-from acesim import Experiment, AceSolver, BogeySolver
+from acesim import Experiment, AceSolver, RandomizedDesignSolver, RepeatedDesignSolver
 
 
 NUM_PROCESSES = 6
-NUM_ITERATIONS = 100
+NUM_ITERATIONS = 10
 REFERENCE_PEPTIDES_CSV_FILE = '/Users/leework/Documents/Research/projects/project_ace/scripts/ace-analysis/test/data/iedb_mmer_all.csv'
-OUTPUT_DIR = '/Users/leework/Documents/Research/projects/project_ace/data/processed/01_benchmark_ace_vs_naive_approach'
 
 
 if __name__ == "__main__":
@@ -26,10 +25,8 @@ if __name__ == "__main__":
         golfy_allow_extra_pools=False,
         trained_model_file='/Users/leework/Documents/Research/projects/project_ace/scripts/ace-analysis/notebooks/models/seq_sim_trained_model.pt'
     )
-    bogey_solver = BogeySolver(
-        name='bogey',
-        random_seed=Experiment.generate_random_seed()
-    )
+    randomized_solver = RandomizedDesignSolver(name='random', random_seed=1)
+    repeated_solver = RepeatedDesignSolver(name='repeated')
     experiment = Experiment(
         experiment_id=random.randint(1,1000000),
         num_peptides=90,
@@ -37,18 +34,18 @@ if __name__ == "__main__":
         coverage=3,
         num_positives=9,
         peptide_sampling_method='alanine_scanning',
-        solvers=[ace_solver_1, ace_solver_2, bogey_solver],
+        solvers=[ace_solver_1, ace_solver_2, randomized_solver, repeated_solver],
         df_ref_peptides=pd.read_csv(REFERENCE_PEPTIDES_CSV_FILE),
         num_processes=NUM_PROCESSES
     )
     df_results, df_assignments = experiment.run(num_iterations=NUM_ITERATIONS)
     df_results.to_csv(
-        OUTPUT_DIR + '/ace_vs_naive_approach_benchmark_experiment_alanine_scanning_results.tsv',
+        'alanine_scanning_results.tsv',
         sep='\t',
         index=False
     )
     df_assignments.to_csv(
-        OUTPUT_DIR + '/ace_vs_naive_approach_benchmark_experiment_alanine_scanning_assignments.tsv',
+        'alanine_scanning_assignments.tsv',
         sep='\t',
         index=False
     )
