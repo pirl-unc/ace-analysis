@@ -32,7 +32,7 @@ if __name__ == "__main__":
         num_peptides=90,
         num_peptides_per_pool=9,
         coverage=3,
-        num_positives=9,
+        num_positives=10,
         peptide_sampling_method='alanine_scanning',
         solvers=[ace_solver_1, ace_solver_2, randomized_solver, repeated_solver],
         df_ref_peptides=pd.read_csv(REFERENCE_PEPTIDES_CSV_FILE),

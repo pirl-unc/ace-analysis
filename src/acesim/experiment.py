@@ -9,14 +9,19 @@ import math
 import multiprocessing as mp
 import numpy as np
 import pandas as pd
+from sklearn.metrics import roc_auc_score
 import random
 import time
 from dataclasses import dataclass, field
 from functools import partial
 from typing import Dict, List, Tuple
+from acelib.block_assignment import BlockAssignment
 from acelib.deconvolution import deconvolve_hit_peptides
 from acelib.utilities import convert_dataframe_to_peptides
+from golfy.deconvolution import deconvolve
 from .solver import Solver
+from .solver_precomputed_design import PrecomputedSolver
+from .utilities import convert_block_assignment_to_golfy_design, convert_spot_counts_to_golfy_spotcounts
 
 
 @dataclass
@@ -60,6 +65,8 @@ class Experiment:
     dispersion_factor: float = 1.0
     method: str = 'threshold' # Allowed values: 'threshold', 'adaptive', 'combined'
     alpha: float = 0.05
+    deconvolution_methods: List = field(default_factory=lambda: ['empirical', 'lasso', 'em'])
+    min_peptide_activity: float = 10.0
     _threshold: float = None
 
     # Define the hardware parameters
@@ -105,19 +112,43 @@ class Experiment:
 
         Parameters
         ----------
-        hit_peptide_ids         :   List of hit peptide IDs.
-        label_dict      :   Dictionary of ground truth labels;
+        hit_peptide_ids     :   List of hit peptide IDs.
+        label_dict          :   Dictionary of ground truth labels;
         """
         positives = [peptide_id for peptide_id in label_dict.keys() if label_dict[peptide_id] == 1]
         negatives = [peptide_id for peptide_id in label_dict.keys() if label_dict[peptide_id] == 0]
+
         # Sensitivity: True positives / All ground truth positives aka Recall
         sensitivity = len(set(positives).intersection(set(hit_peptide_ids))) / len(positives)
         # Specificity: True negatives / All ground truth negatives aka 1 - False Positive Rate
         not_hit_peptide_ids = [peptide_id for peptide_id in label_dict.keys() if peptide_id not in hit_peptide_ids]
         specificity = len(set(not_hit_peptide_ids).intersection(set(negatives))) / len(negatives)
         # Precision: True positives / All positives predicted (PPV)
-        precision = len(set(positives).intersection(set(hit_peptide_ids))) / len(hit_peptide_ids)
+        if len(hit_peptide_ids) == 0:
+            precision = 0.0
+        else:
+            precision = len(set(positives).intersection(set(hit_peptide_ids))) / len(hit_peptide_ids)
         return sensitivity, specificity, precision
+    
+    def evaluate_1shot_deconvolution(
+            self, 
+            df_predicted_activities: pd.DataFrame,
+            label_dict: Dict[str, int]
+    ) -> Tuple[float, float, float]:
+        """
+        Evaluate the single-shot deconvolution results.
+
+        Parameters
+        ----------
+        df_predicted_peptide_activities :   pd.DataFrame with the following columns:
+                                            'peptide_id'
+                                            'peptide_activity'
+        label_dict                      :   Dictionary of ground truth labels (peptide_id) -> (0/1 binding);
+        """
+        y_true = list(label_dict.values())
+        activities = df_predicted_activities['peptide_activity']
+        scaled_activities = np.exp(activities)/np.sum(np.exp(activities))
+        return roc_auc_score(y_true, scaled_activities)
 
     def run_worker(self, iteration: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
@@ -140,11 +171,15 @@ class Experiment:
         list_block_assignments = []
         list_preferred_peptides_pairs = []
         for solver in self.solvers:
-            block_assignment, preferred_peptide_pairs = solver.generate_assignment(
-                peptides=convert_dataframe_to_peptides(df_peptides=df_peptides),
-                num_peptides_per_pool=self.num_peptides_per_pool,
-                num_coverage=self.coverage
-            )
+            if isinstance(solver, PrecomputedSolver):
+                block_assignment = solver.block_assignment
+                preferred_peptide_pairs = []
+            else:
+                block_assignment, preferred_peptide_pairs = solver.generate_assignment(
+                    peptides=convert_dataframe_to_peptides(df_peptides=df_peptides),
+                    num_peptides_per_pool=self.num_peptides_per_pool,
+                    num_coverage=self.coverage
+                )
             list_block_assignments.append(block_assignment)
             list_preferred_peptides_pairs.append(preferred_peptide_pairs)
 
@@ -166,9 +201,19 @@ class Experiment:
             'num_violations': [],
             'num_positive_peptide_sequences': [],
             'positive_peptide_sequences': [],
-            'sensitivity': [],
-            'specificity': [],
-            'precision': []
+            'num_total_pools_empirical': [],
+            'sensitivity_empirical': [],
+            'specificity_empirical': [],
+            'precision_empirical': [],
+            'aucroc_score_empirical': [],
+            'sensitivity_lasso': [],
+            'specificity_lasso': [],
+            'precision_lasso': [],
+            'aucroc_score_lasso': [],
+            'sensitivity_em': [],
+            'specificity_em': [],
+            'precision_em': [],
+            'aucroc_score_em': []
         }
         df_assignments = pd.DataFrame()
         for i in range(0, len(list_block_assignments)):
@@ -180,23 +225,83 @@ class Experiment:
                 df_configuration=df_assignment,
                 peptide_spot_counts=peptide_spot_counts
             )
-            hit_pool_ids = self.deconvolve_hit_pools(
-                pool_spot_counts=pool_spot_counts,
-                method=self.method,
-                threshold=self.threshold,
-                alpha=self.alpha
-            )
-            df_hits = self.deconvolve_hit_peptides(
-                hit_pool_ids=hit_pool_ids,
-                df_assignment=df_assignment,
-                min_coverage=self.coverage
-            )
-            candidate_peptide_ids = df_hits.loc[df_hits['deconvolution_result'] == 'candidate_hit','peptide_id'].values.tolist()
+            num_total_pools_empirical = 0
+            for deconvolution_method in self.deconvolution_methods:
+                if deconvolution_method == 'empirical':
+                    hit_pool_ids = self.deconvolve_hit_pools(
+                        pool_spot_counts=pool_spot_counts,
+                        method=self.method,
+                        threshold=self.threshold,
+                        alpha=self.alpha
+                    )
+                    df_hits = self.deconvolve_hit_peptides(
+                        hit_pool_ids=hit_pool_ids,
+                        df_assignment=df_assignment,
+                        min_coverage=self.coverage
+                    )
+                    peptide_activities_data = {
+                        'peptide_id': [],
+                        'peptide_activity': []
+                    }
+                    for peptide_id in curr_block_assignment.peptide_ids:
+                        if peptide_id in df_hits['peptide_id'].values.tolist():
+                            peptide_activities_data['peptide_id'].append(peptide_id)
+                            peptide_activities_data['peptide_activity'].append(df_hits.loc[df_hits['peptide_id'] == peptide_id, 'num_coverage'].values[0])
+                        else:
+                            peptide_activities_data['peptide_id'].append(peptide_id)
+                            peptide_activities_data['peptide_activity'].append(0)
+                    df_predicted_peptide_activities = pd.DataFrame(peptide_activities_data)
+                    candidate_peptide_ids = df_hits.loc[df_hits['deconvolution_result'] == 'candidate_hit', 'peptide_id'].values.tolist()
+                    num_total_pools_empirical = len(df_assignment['pool_id'].unique()) + len(candidate_peptide_ids)
+                elif deconvolution_method == 'lasso' or deconvolution_method == 'em':
+                    golfy_design, peptide_idx_to_id_dict = convert_block_assignment_to_golfy_design(
+                        block_assignment=curr_block_assignment
+                    )
+                    golfy_spot_counts = convert_spot_counts_to_golfy_spotcounts(
+                        spot_counts=pool_spot_counts,
+                        block_assignment=curr_block_assignment
+                    )
+                    deconvolution_result = deconvolve(
+                        s=golfy_design,
+                        spot_counts=golfy_spot_counts,
+                        method=deconvolution_method,
+                        min_peptide_activity=self.min_peptide_activity,
+                        verbose=False
+                    )
+                    deconvolution_result_data = {
+                        'peptide_id': [],
+                        'deconvolution_result': []
+                    }
+                    for peptide_idx in deconvolution_result.high_confidence_hits:
+                        deconvolution_result_data['peptide_id'].append(peptide_idx_to_id_dict[peptide_idx])
+                        deconvolution_result_data['deconvolution_result'].append('hit')
+                    df_hits = pd.DataFrame(deconvolution_result_data)
+                    peptide_activities_data = {
+                        'peptide_id': [],
+                        'peptide_activity': []
+                    }
+                    peptide_idx = 0
+                    for peptide_activity in deconvolution_result.activity_per_peptide:
+                        peptide_id = peptide_idx_to_id_dict[peptide_idx]
+                        peptide_activities_data['peptide_id'].append(peptide_id)
+                        peptide_activities_data['peptide_activity'].append(peptide_activity)
+                        peptide_idx += 1
+                    df_predicted_peptide_activities = pd.DataFrame(peptide_activities_data)
+                else:
+                    print("Unknown deconvolution method: %s" % deconvolution_method)
+                    exit(1)                
+            
+                sensitivity, specificity, precision = self.evaluate_deconvolution(
+                    hit_peptide_ids=df_hits['peptide_id'].values.tolist(),
+                    label_dict=label_dict
+                )
+                aucroc_score = self.evaluate_1shot_deconvolution(df_predicted_peptide_activities, label_dict)
+                results_data['sensitivity_%s' % deconvolution_method].append(sensitivity)
+                results_data['specificity_%s' % deconvolution_method].append(specificity)
+                results_data['precision_%s' % deconvolution_method].append(precision)
+                results_data['aucroc_score_%s' % deconvolution_method].append(aucroc_score)
+
             num_total_pools_solver = len(df_assignment['pool_id'].unique()) + len(candidate_peptide_ids)
-            sensitivity, specificity, precision = self.evaluate_deconvolution(
-                hit_peptide_ids=df_hits['peptide_id'].values.tolist(),
-                label_dict=label_dict
-            )
 
             # Append results to results_data dict
             results_data['experiment_id'].append(self.experiment_id)
@@ -212,10 +317,9 @@ class Experiment:
             results_data['num_violations'].append(curr_block_assignment.num_violations())
             results_data['num_positive_peptide_sequences'].append(len(positive_peptide_sequences))
             results_data['positive_peptide_sequences'].append(';'.join(positive_peptide_sequences))
-            results_data['sensitivity'].append(sensitivity)
-            results_data['specificity'].append(specificity)
-            results_data['precision'].append(precision)
+            results_data['num_total_pools_empirical'].append(num_total_pools_empirical)
 
+            # Concatenate assignments
             df_assignment['experiment_id'] = [self.experiment_id] * len(df_assignment)
             df_assignment['iteration'] = [iteration] * len(df_assignment)
             df_assignment['solver'] = [solver.name] * len(df_assignment)
@@ -300,12 +404,30 @@ class Experiment:
                 'Epitope': [],
                 'Binding': []
             }
+            num_positives_ = self.num_positives
             for index, row in pos_df.iterrows():
                 peptide_sequence = row['Epitope']
                 peptide_sequences = Experiment.perform_alanine_scanning(peptide_sequence=peptide_sequence)
-                for peptide_sequence_ in peptide_sequences:
-                    pos_data['Epitope'].append(peptide_sequence_)
-                    pos_data['Binding'].append(1)
+                if num_positives_ > 0:
+                    if num_positives_ >= len(peptide_sequences):
+                        for peptide_sequence_ in peptide_sequences:
+                            pos_data['Epitope'].append(peptide_sequence_)
+                            pos_data['Binding'].append(1)
+                            num_positives_ -= 1
+                    else :
+                        positive_indices = random.sample(list(range(0, len(peptide_sequences))), num_positives_)
+                        for idx in range(0, len(peptide_sequences)):
+                            peptide_sequence_ = peptide_sequences[idx]
+                            pos_data['Epitope'].append(peptide_sequence_)
+                            if idx in positive_indices:
+                                pos_data['Binding'].append(1)
+                                num_positives_ -= 1
+                            else:
+                                pos_data['Binding'].append(0)
+                else:
+                    for peptide_sequence_ in peptide_sequences:
+                        pos_data['Epitope'].append(peptide_sequence_)
+                        pos_data['Binding'].append(0)
             pos_df = pd.DataFrame(pos_data)
             neg_data = {
                 'Epitope': [],
@@ -324,7 +446,7 @@ class Experiment:
         # Reset the index of the dataframe
         peptides_df = peptides_df.reset_index(drop=True)
         # Add a peptide_id column to the dataframe
-        peptides_df['peptide_id'] = [f'peptide_{i}' for i in peptides_df.index]
+        peptides_df['peptide_id'] = [f'peptide_{i}' for i in range(1, len(peptides_df) + 1)]
         
         # Select the peptide sequences and peptide ids
         df_peptides = peptides_df[['peptide_id', 'Epitope']]
@@ -502,7 +624,7 @@ class Experiment:
             self, 
             df_configuration: pd.DataFrame,
             peptide_spot_counts: Dict[str,List[int]]
-    ) -> Dict[str,int]:
+    ) -> Dict[int,int]:
         """
         Aggregate the ELISPOT assay using the optimal peptide pools configuration.
         Determine how spots are sampled for each peptide pool. 
@@ -538,12 +660,17 @@ class Experiment:
 
         peptide_spot_counts = copy.deepcopy(peptide_spot_counts)
         pool_spot_counts = {i: 0 for i in df_configuration['pool_id'].unique()}
-        
+        # if self.deconvolution_method != 'empirical':
+        #     block_assignment = BlockAssignment.load_from_dataframe(df_assignments=df_configuration)
+        #     pool_spot_counts = convert_spot_counts_to_golfy_spotcounts(
+        #         spot_counts=pool_spot_counts,
+        #         block_assignment=block_assignment
+        #     )
         for pool in df_configuration['pool_id'].unique():
             pool_df = df_configuration[df_configuration['pool_id'] == pool]
             for peptide_id in pool_df['peptide_id']:
                 pool_spot_counts[pool] += peptide_spot_counts[peptide_id][0].pop(-1)
-                
+
         return pool_spot_counts
     
     def deconvolve_hit_pools(
