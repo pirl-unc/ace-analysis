@@ -3,25 +3,19 @@ The purpose of this python3 script is to implement the Solver dataclass
 """
 
 
-import pandas as pd
-import torch
 from dataclasses import dataclass, field
 from .solver import Solver
+from acelib.main import run_ace_generate
 from acelib.block_assignment import BlockAssignment
-from acelib.block_design import BlockDesign
-from acelib.main import run_ace_golfy, run_ace_sat_solver
-from acelib.sequence_features import AceNeuralEngine
 from acelib.types import *
-from transformers import AutoTokenizer, AutoModelForMaskedLM
 
 
 @dataclass(frozen=True)
 class AceSolver(Solver):
     cluster_peptides: bool
-    random_seed: int
     mode: str
     trained_model_file: str
-    sim_threshold: float = 0.7
+    sim_threshold: float = 0.8
     sim_fxn: str = 'euclidean'
     golfy_max_iters: int = 2000
     golfy_init_mode: str = 'greedy'
@@ -29,13 +23,17 @@ class AceSolver(Solver):
     max_peptides_per_block: int = 100
     max_peptides_per_pool: int = 10
     num_processes: int = 1
+    shuffle_iters: int = 1000
+    assign_well_ids: bool = True
+    num_plate_wells = 96
     verbose: bool = False
 
     def generate_assignment(
             self,
             peptides: Peptides,
             num_peptides_per_pool: int,
-            num_coverage: int
+            num_coverage: int,
+            random_seed: int
     ) -> Tuple[BlockAssignment, PeptidePairs]:
         """
         Generates an ELISpot configuration.
@@ -45,60 +43,32 @@ class AceSolver(Solver):
         peptides                    :   Peptides (list of tuples (peptide ID, peptide sequence)).
         num_peptides_per_pool       :   Number of peptides per pool
         num_coverage                :   Number of coverage.
+        random_seed                 :   Random seed.    
         
         Returns
         -------
         block_assignment            :   BlockAssignment object.
         preferred_peptide_pairs     :   PeptidePairs.
         """
-        # Step 1. Identify pairs of similar peptides
-        if self.cluster_peptides:
-            # Load model
-            ESM2_TOKENIZER = AutoTokenizer.from_pretrained("facebook/esm2_t6_8M_UR50D")
-            ESM2_MODEL = AutoModelForMaskedLM.from_pretrained("facebook/esm2_t6_8M_UR50D", return_dict=True, output_hidden_states=True)
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            ace_eng = AceNeuralEngine(ESM2_MODEL, ESM2_TOKENIZER, device)
-            ace_eng.load_weights(self.trained_model_file)
-
-            # Predict similar peptides
-            preferred_peptide_pairs = ace_eng.find_paired_peptides(
-                peptide_ids=[p[0] for p in peptides],
-                peptide_sequences=[p[1] for p in peptides],
-                sim_fxn=self.sim_fxn,
-                threshold=self.sim_threshold
-            )
-        else:
-            preferred_peptide_pairs = []
-        preferred_peptide_pairs = [(p1, p2) for p1, p2, score in preferred_peptide_pairs]
-
-        # Step 2. Generate a block design
-        block_design = BlockDesign(
+        block_assignment, block_design = run_ace_generate(
             peptides=peptides,
             num_peptides_per_pool=num_peptides_per_pool,
             num_coverage=num_coverage,
-            max_peptides_per_block=self.max_peptides_per_block,
-            disallowed_peptide_pairs=[],
-            preferred_peptide_pairs=preferred_peptide_pairs
+            cluster_peptides=self.cluster_peptides,
+            trained_model_file=self.trained_model_file,
+            mode=self.mode,
+            sequence_similarity_function=self.sim_fxn,
+            sequence_similarity_threshold=self.sim_threshold,
+            golfy_random_seed=random_seed,
+            golfy_strategy=self.golfy_init_mode,
+            golfy_max_iters=self.golfy_max_iters,
+            golfy_allow_extra_pools=self.golfy_allow_extra_pools,
+            cpsat_solver_num_processes=self.num_processes,
+            cpsat_solver_shuffle_iters=self.shuffle_iters,
+            cpsat_solver_max_peptides_per_block=self.max_peptides_per_block,
+            cpsat_solver_max_peptides_per_pool=self.max_peptides_per_pool,
+            assign_well_ids=self.assign_well_ids,
+            num_plate_wells=self.num_plate_wells,
+            verbose=False
         )
-
-        # Step 3. Generate a block assignment
-        if self.mode == 'golfy':
-            block_assignment = run_ace_golfy(
-                block_design=block_design,
-                random_seed=self.random_seed,
-                max_iters=self.golfy_max_iters,
-                init_mode=self.golfy_init_mode,
-                allow_extra_pools=self.golfy_allow_extra_pools,
-                verbose=self.verbose
-            )
-        elif self.mode == 'sat_solver':
-            block_assignment = run_ace_sat_solver(
-                block_design=block_design,
-                max_peptides_per_pool=self.max_peptides_per_pool,
-                num_processes=self.num_processes,
-                verbose=self.verbose
-            )
-        else:
-            print("Unknown mode: %s" % self.mode)
-            exit(1)
-        return block_assignment, preferred_peptide_pairs
+        return block_assignment, block_design.preferred_peptide_pairs

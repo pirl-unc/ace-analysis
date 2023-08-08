@@ -1,55 +1,92 @@
 import pandas as pd
 import random
-from acesim import Experiment, PrecomputedSolver
-from acelib.block_assignment import BlockAssignment
+import os
+from acesim import Experiment, AceSolver, RandomizedDesignSolver, RepeatedDesignSolver
 
 
 NUM_PROCESSES = 64
-NUM_ITERATIONS = 1000
+NUM_ITERATIONS = 100
 REFERENCE_PEPTIDES_CSV_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/iedb_mmer_all.csv'
-RESOURCE_DIR = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/processed/04_generate_resource_designs'
-RESOURCE_CSV_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/deconvolution_methods_resources.csv'
+DESIGNS_CSV_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/deconvolution_designs.csv'
 OUTPUT_DIR = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/processed/01_benchmark_ace/deconvolution_methods'
+GOLFY_INIT_MODE = 'greedy'
+GOLFY_MAX_ITERS = 2000
 MIN_PEPTIDE_ACTIVITY = 10.0
 RANDOM_EFFECTS = True
 
 
+def get_solvers():
+    ace_solver_1 = AceSolver(
+        name='ace_golfy_clusteroff_extrapools',
+        cluster_peptides=False,
+        mode='golfy',
+        trained_model_file='',
+        golfy_max_iters=GOLFY_MAX_ITERS,
+        golfy_init_mode=GOLFY_INIT_MODE,
+        golfy_allow_extra_pools=True
+    )
+    ace_solver_2 = AceSolver(
+        name='ace_golfy_clusteroff_noextrapools',
+        cluster_peptides=False,
+        mode='golfy',
+        trained_model_file='',
+        golfy_max_iters=GOLFY_MAX_ITERS,
+        golfy_init_mode=GOLFY_INIT_MODE,
+        golfy_allow_extra_pools=False
+    )
+    randomized_solver = RandomizedDesignSolver(name='randomized_block_assignment')
+    repeated_solver = RepeatedDesignSolver(name='repeated_block_assignment')
+    return [
+        ace_solver_1,
+        ace_solver_2,
+        randomized_solver,
+        repeated_solver
+    ]
+
+
 if __name__ == "__main__":
+    df_experiments = pd.read_csv(DESIGNS_CSV_FILE)
     df_results_all = pd.DataFrame()
-    df_resources = pd.read_csv(RESOURCE_CSV_FILE)
-    experiment_id = 1
-    for index, row in df_resources.iterrows():
-        excel_file = RESOURCE_DIR + '/' + row['design_excel_file']
+    print('Started running deconvolution experiments')
+    for index, row in df_experiments.iterrows():
         num_peptides = row['num_peptides']
         num_peptides_per_pool = row['num_peptides_per_pool']
         num_coverage = row['num_coverage']
-        num_positives = row['num_positives']
-        block_assignment = BlockAssignment.read_excel_file(
-            excel_file=excel_file,
-            sheet_name='block_assignment'
-        )
-        precomputed_solver = PrecomputedSolver(
-            name='precomputed',
-            block_assignment=block_assignment
-        )
+        num_true_positive_peptides = row['num_true_positive_peptides']
+        print('Started running experiment for the following configuration:')
+        print('\tNumber of peptides: %i' % num_peptides)
+        print("\tNumber of peptides per pool: %i" % num_peptides_per_pool)
+        print("\tNumber of coverage: %i" % num_coverage)
+        print("\tNumber of true positive peptides: %i" % num_true_positive_peptides)
+        experiment_id = random.randint(1, 1000000000)
         experiment = Experiment(
             experiment_id=experiment_id,
             num_peptides=num_peptides,
             num_peptides_per_pool=num_peptides_per_pool,
             coverage=num_coverage,
-            num_positives=num_positives,
-            solvers=[precomputed_solver],
+            num_positives=num_true_positive_peptides,
+            peptide_sampling_method='',
+            solvers=get_solvers(),
             min_peptide_activity=MIN_PEPTIDE_ACTIVITY,
             random_effects=RANDOM_EFFECTS,
             df_ref_peptides=pd.read_csv(REFERENCE_PEPTIDES_CSV_FILE),
             num_processes=NUM_PROCESSES
         )
         df_results, df_assignments = experiment.run(num_iterations=NUM_ITERATIONS)
-        df_results_all = pd.concat([df_results_all, df_results])
-        experiment_id += 1
+        output_dir = OUTPUT_DIR + '/%ipeptides_%iperpool_%ix' % (num_peptides, num_peptides_per_pool, num_coverage)
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        df_results.drop(columns=['peptides'], inplace=True)
+        df_results.to_csv(
+            output_dir + '/deconvolution_experiment_results_%i.tsv' % experiment_id,
+            sep='\t',
+            index=False
+        )
+        df_assignments.to_csv(
+            output_dir + '/deconvolution_experiment_assignments_%i.tsv' % experiment_id,
+            sep='\t',
+            index=False
+        )
+        print('Finished running the above experiment.')
+    print('Finished running deconvolution experiments')
 
-    df_results_all.to_csv(
-        OUTPUT_DIR + '/deconvolution_methods_experiment_results.tsv',
-        sep='\t',
-        index=False
-    )

@@ -4,23 +4,20 @@ import random
 from acesim import Experiment, AceSolver, RandomizedDesignSolver, RepeatedDesignSolver
 
 
-NUM_PROCESSES = 2
-NUM_ITERATIONS = 10
+NUM_PROCESSES = 64
+NUM_ITERATIONS = 100
 REFERENCE_PEPTIDES_CSV_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/iedb_mmer_all.csv'
 DESIGNS_CSV_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/reduced_designs.csv'
 TRAINED_MODEL_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/seq_sim_trained_model.pt'
 OUTPUT_DIR = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/processed/01_benchmark_ace/reduced_designs'
 GOLFY_INIT_MODE = 'greedy'
 GOLFY_MAX_ITERS = 2000
-SAT_SOLVER_NUM_PROCESSES = 32
 
 
 def get_solvers():
-    random_seed = Experiment.generate_random_seed()
     ace_solver_1 = AceSolver(
         name='ace_golfy_clusteroff_noextrapools',
         cluster_peptides=False,
-        random_seed=random_seed,
         mode='golfy',
         trained_model_file='',
         golfy_max_iters=GOLFY_MAX_ITERS,
@@ -30,7 +27,6 @@ def get_solvers():
     ace_solver_2 = AceSolver(
         name='ace_golfy_clusteroff_extrapools',
         cluster_peptides=False,
-        random_seed=random_seed,
         mode='golfy',
         trained_model_file=TRAINED_MODEL_FILE,
         sim_threshold=0.7,
@@ -39,22 +35,11 @@ def get_solvers():
         golfy_init_mode=GOLFY_INIT_MODE,
         golfy_allow_extra_pools=True
     )
-    ace_solver_3 = AceSolver(
-        name='ace_sat_solver_clusteroff',
-        cluster_peptides=False,
-        random_seed=random_seed,
-        mode='sat_solver',
-        trained_model_file='',
-        max_peptides_per_block=100,
-        max_peptides_per_pool=10,
-        num_processes=SAT_SOLVER_NUM_PROCESSES
-    )
-    randomized_solver = RandomizedDesignSolver(name='randomized_block_assignment', random_seed=random_seed)
+    randomized_solver = RandomizedDesignSolver(name='randomized_block_assignment')
     repeated_solver = RepeatedDesignSolver(name='repeated_block_assignment')
     return [
         ace_solver_1,
         ace_solver_2,
-        ace_solver_3,
         randomized_solver,
         repeated_solver
     ]
@@ -82,6 +67,7 @@ if __name__ == "__main__":
             coverage=num_coverage,
             num_positives=num_true_positive_peptides,
             peptide_sampling_method='',
+            random_effects=False,
             solvers=get_solvers(),
             df_ref_peptides=pd.read_csv(REFERENCE_PEPTIDES_CSV_FILE),
             num_processes=NUM_PROCESSES

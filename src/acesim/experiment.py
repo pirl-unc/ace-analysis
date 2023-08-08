@@ -1,5 +1,5 @@
 """
-The purpose of this python3 script is to implement the Experiment dataclas
+The purpose of this python3 script is to implement the Experiment dataclass
 """
 
 
@@ -9,30 +9,29 @@ import math
 import multiprocessing as mp
 import numpy as np
 import pandas as pd
-from sklearn.metrics import roc_auc_score
 import random
-import time
+from sklearn.metrics import roc_auc_score
 from dataclasses import dataclass, field
 from functools import partial
-from typing import Dict, List, Tuple
-from acelib.block_assignment import BlockAssignment
-from acelib.deconvolution import deconvolve_hit_peptides
+from typing import Dict, List, Literal, Tuple
+from acelib.constants import DeconvolutionLabels, DeconvolveModes
+from acelib.main import run_ace_deconvolve
 from acelib.utilities import convert_dataframe_to_peptides
-from golfy.deconvolution import deconvolve
 from .solver import Solver
 from .solver_precomputed_design import PrecomputedSolver
-from .utilities import convert_block_assignment_to_golfy_design, convert_spot_counts_to_golfy_spotcounts
 
 
 @dataclass
 class Experiment:
     """
-    Class to simulate an end-to-end ELISpot experiment. Class accepts
-    a Solver objects, which are used to generate a configuration
-    for a given sample of peptides. For each configuration, the class
-    simulates the number of spots per well in the experiment. Then, the 
-    putative positive peptides are identified and test statistics are
-    calculated for the deconvolution results.
+    Class to simulate an end-to-end ELISpot experiment (generation of config,
+    simulation of spot counts, and identification of positive peptides).
+    Class accepts a list of Solver objects, which are used to generate a
+    configuration for a given sample of peptides. For each sample of peptides,
+    the class simulates the number of spots per peptide and maps this to each
+    well per configuration from each solver. Then, the putative positive
+    peptides are identified and test statistics are calculated for the
+    deconvolution results.
 
     Simulation Procedure:
     1. Initialize the object with the given assay parameters.
@@ -58,15 +57,15 @@ class Experiment:
     # Define the simulation parameters
     df_ref_peptides: pd.DataFrame # reference database
     random_effects: bool = False
-    peptide_sampling_method: str = '' # 'levenshtein', 'alanine_scanning', 'sliding_window'
-    peptide_length: int = 9 # when peptide_sampling_method is 'alanine_scanning" or 'sliding_window'
+    peptide_sampling_method: Literal['', 'levenshtein', 'alanine'] = ''
+    peptide_length: int = 9
     mu_immunogenic: float = 100.0
     mu_nonimmunogenic: float = 10.0
     dispersion_factor: float = 1.0
-    method: str = 'threshold' # Allowed values: 'threshold', 'adaptive', 'combined'
-    alpha: float = 0.05
+    method: Literal['threshold', 'adaptive', 'combined'] = 'threshold'
+    alpha: float = 0.05 
     deconvolution_methods: List = field(default_factory=lambda: ['empirical', 'lasso', 'em'])
-    min_peptide_activity: float = 10.0
+    min_peptide_activity: float = 10.0 # minimum to be considered a hit by 1-shot deconvolution
     _threshold: float = None
 
     # Define the hardware parameters
@@ -85,25 +84,29 @@ class Experiment:
         -------
         random_seed :   Random seed.        
         """
-        return random.randint(1, 1000000)
+        return random.randint(1, 100000000)
         
     def __post_init__(self):
         # Set threshold
         if self.random_effects:
-            # If using random effects set the threshold to the immunogenic mean
-            # Can get complicated if num_peptides_per_pool * mu_nonimmunogenic >= mu_immunogenic so we 
-            # apply a correction factor to the threshold to account for the non-immunogenic peptides of n-1
-            self._threshold = self.mu_immunogenic + self.mu_nonimmunogenic*max(0, self.num_peptides_per_pool-2)
+            # If using random effects set the threshold to the
+            # immunogenic mean + correction factor can get complicated
+            # if num_peptides_per_pool * mu_nonimmunogenic >= mu_immunogenic,
+            # so we apply a correction factor to the threshold to account for
+            # the non-immunogenic peptides of n-1
+            self._threshold = self.mu_immunogenic + \
+                              self.mu_nonimmunogenic * max(0, self.num_peptides_per_pool-2)
         else:
-            # In the non-random effects case, all the non-immunogenic peptides 
+            # In the non-random effects case, all the non-immunogenic peptides
             # are assigned a spot count of 0 so the threshold is set to 1
             self._threshold = 1
+        assert self.num_positives <= self.num_peptides, \
+            "Number of positives must be less than or equal to the number of peptides."
+        assert self.num_peptides >= self.num_peptides_per_pool, \
+            "Number of peptides must be greater than or equal to the number of peptides per pool."
 
-        assert self.num_positives <= self.num_peptides, "Number of positives must be less than or equal to the number of peptides."
-        assert self.num_peptides >= self.num_peptides_per_pool, "Number of peptides must be greater than or equal to the number of peptides per pool."
-
+    @staticmethod
     def evaluate_deconvolution(
-            self, 
             hit_peptide_ids: List[str],
             label_dict: Dict[str, int]
     ) -> Tuple[float, float, float]:
@@ -114,6 +117,14 @@ class Experiment:
         ----------
         hit_peptide_ids     :   List of hit peptide IDs.
         label_dict          :   Dictionary of ground truth labels;
+                                key     = peptide ID.
+                                value   = 0 or 1.
+
+        Returns
+        -------
+        sensitivity         :   Sensitivity.
+        specificity         :   Specificity.
+        precision           :   Precision.
         """
         positives = [peptide_id for peptide_id in label_dict.keys() if label_dict[peptide_id] == 1]
         negatives = [peptide_id for peptide_id in label_dict.keys() if label_dict[peptide_id] == 0]
@@ -131,35 +142,90 @@ class Experiment:
         return sensitivity, specificity, precision
     
     def evaluate_1shot_deconvolution(
-            self, 
-            df_predicted_activities: pd.DataFrame,
+            self,
+            df_predicted_peptide_activities: pd.DataFrame,
             label_dict: Dict[str, int]
-    ) -> Tuple[float, float, float]:
+    ) -> float:
         """
-        Evaluate the single-shot deconvolution results.
+        Evaluate the single-shot deconvolution results via AUCROC.
 
         Parameters
         ----------
         df_predicted_peptide_activities :   pd.DataFrame with the following columns:
                                             'peptide_id'
                                             'peptide_activity'
-        label_dict                      :   Dictionary of ground truth labels (peptide_id) -> (0/1 binding);
+        label_dict                      :   Dictionary of ground truth labels;
+                                            key     = peptide ID.
+                                            value   = 0 or 1.
+
+        Returns
+        -------
+        aucroc_score                   :   AUCROC score.
         """
-        y_true = list(label_dict.values())
-        activities = df_predicted_activities['peptide_activity']
-        scaled_activities = np.exp(activities)/np.sum(np.exp(activities))
-        return roc_auc_score(y_true, scaled_activities)
+        y_true = []
+        y_predicted = []
+        for peptide_id in label_dict.keys():
+            peptide_activity_level = df_predicted_peptide_activities.loc[
+                df_predicted_peptide_activities['peptide_id'] == peptide_id,
+                'peptide_activity_level'
+            ].values[0]
+            y_true.append(label_dict[peptide_id])
+            y_predicted.append(float(peptide_activity_level))
+        return roc_auc_score(y_true, y_predicted)
 
     def run_worker(self, iteration: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
-        Run one iteration of the simulation. Loop through the solvers and
+        Runs one iteration of the simulation. Loop through the solvers and
         generate a configuration for each solver. Then, simulate the spot
         counts for each configuration and identify the hit peptides. Finally,
         run the deconvolution on the hit peptides and return the results.
+
+        Parameters
+        ----------
+        iteration       :   Number of iterations to run.
+
+        Returns
+        -------
+        df_results      :   pd.DataFrame with the following columns:
+                            'experiment_id'
+                            'random_seed'
+                            'iteration'
+                            'peptides'
+                            'num_peptides'
+                            'num_peptides_per_pool'
+                            'num_coverage'
+                            'num_pools'
+                            'solver'
+                            'preferred_peptide_pairs'
+                            'predicted_total_pools'
+                            'num_violations'
+                            'num_positive_peptide_sequences'
+                            'positive_peptide_sequences'
+                            'num_total_pools_empirical'
+                            'sensitivity_empirical'
+                            'specificity_empirical'
+                            'precision_empirical'
+                            'aucroc_score_empirical'
+                            'sensitivity_lasso'
+                            'specificity_lasso'
+                            'precision_lasso'
+                            'aucroc_score_lasso'
+                            'sensitivity_em'
+                            'specificity_em'
+                            'precision_em'
+                            'aucroc_score_em'
+        df_assignments  :   pd.DataFrame with the following columns:
+                            'experiment_id'
+                            'iteration'
+                            'solver'
+                            'coverage_id'
+                            'pool_id'
+                            'peptide_id'
+                            'peptide_sequence'
         """
         # Step 1. Generate a random seed.
         random_seed = Experiment.generate_random_seed()
-        
+
         # Step 2. Sample the peptides. Return a dataframe ids and sequences and ids:labels dict
         df_peptides, label_dict = self.sample_peptides(random_seed=random_seed)
         positive_label_indices = [idx for idx, v in enumerate(label_dict.values()) if v == 1]
@@ -167,28 +233,26 @@ class Experiment:
         positive_peptide_sequences = df_positive_peptides['peptide_sequence']
         peptides = convert_dataframe_to_peptides(df_peptides=df_peptides)
 
-        # Step 3. Generate an assignment from each solver
+        # Step 3. Generate a list of assignments and preferred peptides from each solver
         list_block_assignments = []
         list_preferred_peptides_pairs = []
         for solver in self.solvers:
-            if isinstance(solver, PrecomputedSolver):
-                block_assignment = solver.block_assignment
-                preferred_peptide_pairs = []
-            else:
-                block_assignment, preferred_peptide_pairs = solver.generate_assignment(
-                    peptides=convert_dataframe_to_peptides(df_peptides=df_peptides),
-                    num_peptides_per_pool=self.num_peptides_per_pool,
-                    num_coverage=self.coverage
-                )
+            block_assignment, preferred_peptide_pairs = solver.generate_assignment(
+                peptides=convert_dataframe_to_peptides(df_peptides=df_peptides),
+                num_peptides_per_pool=self.num_peptides_per_pool,
+                num_coverage=self.coverage,
+                random_seed=random_seed
+            )
             list_block_assignments.append(block_assignment)
             list_preferred_peptides_pairs.append(preferred_peptide_pairs)
 
-        # Step 4. Simulate the ELISPOT assay on the Peptide Level (Configuration Independent)
+        # Step 4. Simulate the ELISpot assay on the peptide level (configuration independent)
         peptide_spot_counts = self.simulate_peptide_spot_counts(label_dict=label_dict)
 
-        # Step 5. Evaluate each solver
-        results_data = {
+        # Step 5. Evaluate each solver and deconvolution method
+        results_dict = {
             'experiment_id': [],
+            'random_seed': [],
             'iteration': [],
             'peptides': [],
             'num_peptides': [],
@@ -217,127 +281,135 @@ class Experiment:
         }
         df_assignments = pd.DataFrame()
         for i in range(0, len(list_block_assignments)):
+            # Index into the current block assignment and solver
             curr_block_assignment = list_block_assignments[i]
             df_assignment = list_block_assignments[i].to_dataframe()
             solver = self.solvers[i]
             preferred_peptide_pairs = list_preferred_peptides_pairs[i]
-            pool_spot_counts = self.aggregate_pool_spot_counts(
-                df_configuration=df_assignment,
+            
+            # Compute the pool spot counts per pool assigned by the solver
+            df_readout = Experiment.aggregate_pool_spot_counts(
+                df_assignment=df_assignment,
                 peptide_spot_counts=peptide_spot_counts
             )
+
+            # Deconvolve the hit peptides
             num_total_pools_empirical = 0
             for deconvolution_method in self.deconvolution_methods:
-                if deconvolution_method == 'empirical':
-                    hit_pool_ids = self.deconvolve_hit_pools(
-                        pool_spot_counts=pool_spot_counts,
-                        method=self.method,
-                        threshold=self.threshold,
-                        alpha=self.alpha
-                    )
-                    df_hits = self.deconvolve_hit_peptides(
-                        hit_pool_ids=hit_pool_ids,
-                        df_assignment=df_assignment,
-                        min_coverage=self.coverage
-                    )
-                    peptide_activities_data = {
-                        'peptide_id': [],
-                        'peptide_activity': []
-                    }
-                    for peptide_id in curr_block_assignment.peptide_ids:
-                        if peptide_id in df_hits['peptide_id'].values.tolist():
-                            peptide_activities_data['peptide_id'].append(peptide_id)
-                            peptide_activities_data['peptide_activity'].append(df_hits.loc[df_hits['peptide_id'] == peptide_id, 'num_coverage'].values[0])
-                        else:
-                            peptide_activities_data['peptide_id'].append(peptide_id)
-                            peptide_activities_data['peptide_activity'].append(0)
-                    df_predicted_peptide_activities = pd.DataFrame(peptide_activities_data)
-                    candidate_peptide_ids = df_hits.loc[df_hits['deconvolution_result'] == 'candidate_hit', 'peptide_id'].values.tolist()
-                    num_total_pools_empirical = len(df_assignment['pool_id'].unique()) + len(candidate_peptide_ids)
-                elif deconvolution_method == 'lasso' or deconvolution_method == 'em':
-                    golfy_design, peptide_idx_to_id_dict = convert_block_assignment_to_golfy_design(
-                        block_assignment=curr_block_assignment
-                    )
-                    golfy_spot_counts = convert_spot_counts_to_golfy_spotcounts(
-                        spot_counts=pool_spot_counts,
-                        block_assignment=curr_block_assignment
-                    )
-                    deconvolution_result = deconvolve(
-                        s=golfy_design,
-                        spot_counts=golfy_spot_counts,
-                        method=deconvolution_method,
-                        min_peptide_activity=self.min_peptide_activity,
-                        verbose=False
-                    )
-                    deconvolution_result_data = {
-                        'peptide_id': [],
-                        'deconvolution_result': []
-                    }
-                    for peptide_idx in deconvolution_result.high_confidence_hits:
-                        deconvolution_result_data['peptide_id'].append(peptide_idx_to_id_dict[peptide_idx])
-                        deconvolution_result_data['deconvolution_result'].append('hit')
-                    df_hits = pd.DataFrame(deconvolution_result_data)
-                    peptide_activities_data = {
-                        'peptide_id': [],
-                        'peptide_activity': []
-                    }
-                    peptide_idx = 0
-                    for peptide_activity in deconvolution_result.activity_per_peptide:
-                        peptide_id = peptide_idx_to_id_dict[peptide_idx]
-                        peptide_activities_data['peptide_id'].append(peptide_id)
-                        peptide_activities_data['peptide_activity'].append(peptide_activity)
-                        peptide_idx += 1
-                    df_predicted_peptide_activities = pd.DataFrame(peptide_activities_data)
-                else:
-                    print("Unknown deconvolution method: %s" % deconvolution_method)
-                    exit(1)                
-            
-                sensitivity, specificity, precision = self.evaluate_deconvolution(
-                    hit_peptide_ids=df_hits['peptide_id'].values.tolist(),
+                deconvolution_result = run_ace_deconvolve(
+                    df_readout=df_readout,
+                    block_assignment=curr_block_assignment,
+                    mode=deconvolution_method,
+                    statistical_min_peptide_activity=self.min_peptide_activity,
+                    empirical_min_coverage=1,
+                    empirical_min_spot_count=int(self._threshold),
+                    verbose=False
+                )
+                df_deconvolution_result = deconvolution_result.to_dataframe()
+
+                # Evaluate the deconvolution results
+                aucroc_score = self.evaluate_1shot_deconvolution(
+                    df_predicted_peptide_activities=df_deconvolution_result,
                     label_dict=label_dict
                 )
-                aucroc_score = self.evaluate_1shot_deconvolution(df_predicted_peptide_activities, label_dict)
-                results_data['sensitivity_%s' % deconvolution_method].append(sensitivity)
-                results_data['specificity_%s' % deconvolution_method].append(specificity)
-                results_data['precision_%s' % deconvolution_method].append(precision)
-                results_data['aucroc_score_%s' % deconvolution_method].append(aucroc_score)
 
-            num_total_pools_solver = len(df_assignment['pool_id'].unique()) + len(candidate_peptide_ids)
+                # Filter empirical deconvolution for self.coverage peptide activity level
+                if deconvolution_method == DeconvolveModes.EMPIRICAL:
+                    df_deconvolution_result = df_deconvolution_result.loc[
+                        df_deconvolution_result['peptide_activity_level'] == self.coverage,:
+                    ]
+                    candidate_peptide_ids = df_deconvolution_result.loc[
+                        df_deconvolution_result['deconvolution_result'] == DeconvolutionLabels.CANDIDATE_HIT,
+                        'peptide_id'
+                    ].values.tolist()
+                    num_total_pools_empirical = len(df_assignment['pool_id'].unique()) + len(candidate_peptide_ids)
 
-            # Append results to results_data dict
-            results_data['experiment_id'].append(self.experiment_id)
-            results_data['iteration'].append(iteration)
-            results_data['solver'].append(solver.name)
-            results_data['peptides'].append(';'.join(['%s,%s' % (peptide_id, peptide_sequence) for peptide_id, peptide_sequence in peptides]))
-            results_data['num_peptides'].append(len(peptides))
-            results_data['num_peptides_per_pool'].append(self.num_peptides_per_pool)
-            results_data['num_coverage'].append(self.coverage)
-            results_data['num_pools'].append(len(df_assignment['pool_id'].unique()))
-            results_data['preferred_peptide_pairs'].append(';'.join(['%s,%s' % (peptide_id, peptide_sequence) for peptide_id, peptide_sequence in preferred_peptide_pairs]))
-            results_data['predicted_total_pools'].append(num_total_pools_solver)
-            results_data['num_violations'].append(curr_block_assignment.num_violations())
-            results_data['num_positive_peptide_sequences'].append(len(positive_peptide_sequences))
-            results_data['positive_peptide_sequences'].append(';'.join(positive_peptide_sequences))
-            results_data['num_total_pools_empirical'].append(num_total_pools_empirical)
+                hit_peptide_ids = df_deconvolution_result.loc[
+                    df_deconvolution_result['deconvolution_result'].isin(
+                        [DeconvolutionLabels.CONFIDENT_HIT, DeconvolutionLabels.CANDIDATE_HIT]
+                    ),
+                    'peptide_id'
+                ].values.tolist()
+                sensitivity, specificity, precision = Experiment.evaluate_deconvolution(
+                    hit_peptide_ids=hit_peptide_ids,
+                    label_dict=label_dict
+                )
+                results_dict['sensitivity_%s' % deconvolution_method].append(sensitivity)
+                results_dict['specificity_%s' % deconvolution_method].append(specificity)
+                results_dict['precision_%s' % deconvolution_method].append(precision)
+                results_dict['aucroc_score_%s' % deconvolution_method].append(aucroc_score)
+
+            # Append results to results_dict
+            results_dict['experiment_id'].append(self.experiment_id)
+            results_dict['random_seed'].append(random_seed)
+            results_dict['iteration'].append(iteration)
+            results_dict['solver'].append(solver.name)
+            results_dict['peptides'].append(';'.join(['%s,%s' % (peptide_id, peptide_sequence) for peptide_id, peptide_sequence in peptides]))
+            results_dict['num_peptides'].append(len(peptides))
+            results_dict['num_peptides_per_pool'].append(self.num_peptides_per_pool)
+            results_dict['num_coverage'].append(self.coverage)
+            results_dict['num_pools'].append(len(df_assignment['pool_id'].unique()))
+            results_dict['preferred_peptide_pairs'].append(';'.join(['%s,%s' % (peptide_id, peptide_sequence) for peptide_id, peptide_sequence in preferred_peptide_pairs]))
+            results_dict['predicted_total_pools'].append(num_total_pools_empirical)
+            results_dict['num_violations'].append(curr_block_assignment.num_violations())
+            results_dict['num_positive_peptide_sequences'].append(len(positive_peptide_sequences))
+            results_dict['positive_peptide_sequences'].append(';'.join(positive_peptide_sequences))
+            results_dict['num_total_pools_empirical'].append(num_total_pools_empirical)
 
             # Concatenate assignments
             df_assignment['experiment_id'] = [self.experiment_id] * len(df_assignment)
             df_assignment['iteration'] = [iteration] * len(df_assignment)
             df_assignment['solver'] = [solver.name] * len(df_assignment)
             df_assignments = pd.concat([df_assignments, df_assignment])
-        return pd.DataFrame(results_data), df_assignments
+        df_results = pd.DataFrame(results_dict)
+        return df_results, df_assignments
         
-    def run(self, num_iterations=1) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def run(self, num_iterations: int = 1) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Runs an ELISpot simulation.
 
         Parameters
         ----------
-        num_iterations  :   Number of iterations (default: 1).
+        num_iterations      :   Number of iterations (default: 1).
 
         Returns
         -------
-        df_results      :   pd.DataFrame with the following columns:
-                            '
+        df_results_all      :   pd.DataFrame with the following columns:
+                                'experiment_id'
+                                'random_seed'
+                                'iteration'
+                                'peptides'
+                                'num_peptides'
+                                'num_peptides_per_pool'
+                                'num_coverage'
+                                'num_pools'
+                                'solver'
+                                'preferred_peptide_pairs'
+                                'predicted_total_pools'
+                                'num_violations'
+                                'num_positive_peptide_sequences'
+                                'positive_peptide_sequences'
+                                'num_total_pools_empirical'
+                                'sensitivity_empirical'
+                                'specificity_empirical'
+                                'precision_empirical'
+                                'aucroc_score_empirical'
+                                'sensitivity_lasso'
+                                'specificity_lasso'
+                                'precision_lasso'
+                                'aucroc_score_lasso'
+                                'sensitivity_em'
+                                'specificity_em'
+                                'precision_em'
+                                'aucroc_score_em'
+        df_assignments_all  :   pd.DataFrame with the following columns:
+                                'experiment_id'
+                                'iteration'
+                                'solver'
+                                'coverage_id'
+                                'pool_id'
+                                'peptide_id'
+                                'peptide_sequence'
         """
         iterations = [i for i in range(1, num_iterations + 1)]
 
@@ -375,11 +447,11 @@ class Experiment:
                         'peptide_id'
                         'peptide_sequence'
         labels_dict :   Dictionary;
-                        key = peptide ID.
-                        value = label (0 or 1).
+                        key     = peptide ID.
+                        value   = 0 or 1.
         """
         if self.peptide_sampling_method == '':
-            # Sample the peptides from the reference dataframe
+            # Sample the peptides from the reference dataframe without replacement
             pos_df = self.df_ref_peptides[self.df_ref_peptides['Binding'] == 1].sample(n=self.num_positives, random_state=random_seed)
             neg_df = self.df_ref_peptides[self.df_ref_peptides['Binding'] == 0].sample(n=self.num_peptides - self.num_positives, random_state=random_seed)
         elif self.peptide_sampling_method == 'levenshtein':
@@ -457,51 +529,20 @@ class Experiment:
         return df_peptides, labels_dict
     
     @staticmethod
-    def levenshtein_distance(seq1, seq2) -> int:
+    def levenshtein_distance(sequence_1: str, sequence_2: str) -> int:
         """
         Calculates the Levenshtien distance between two sequences.
 
         Parameters
         ----------
-        seq1            :   Sequence.
-        seq2            :   Sequence.
+        sequence_1      :   Sequence.
+        sequence_2      :   Sequence.
 
         Returns
         -------
         levenshtein     :   Levenshtein distance.
         """
-        return Levenshtein.distance(seq1, seq2)
-    
-    def generate_assignment(
-            self, 
-            solver: Solver, 
-            df_peptides: pd.DataFrame,
-            **kwargs
-    ) -> pd.DataFrame:
-        """
-        Calls the solver's generate_assignment method to generate a configuration
-        of peptide pools to be used in the experiment.
-
-        Parameters
-        ----------
-        solver              :   Solver object.
-        df_peptides         :   pd.DataFrame with the following columns:
-                                'peptide_id'
-                                'peptide_sequence'
-
-        Returns
-        -------
-        df_configuration    :   pd.DataFrame with the following columns:
-                                'coverage_id'
-                                'pool_id'
-                                'peptide_id'
-        """
-        return solver.generate_assignment(
-            peptides=convert_dataframe_to_peptides(df_peptides=df_peptides),
-            num_peptides_per_pool=self.num_peptides_per_pool,
-            num_coverage=self.coverage,
-            kwargs=kwargs
-        )
+        return Levenshtein.distance(sequence_1, sequence_2)
     
     @staticmethod
     def sample_spot_counts(
@@ -543,12 +584,13 @@ class Experiment:
 
         Returns
         -------
-        spot_counts         :   List of integers; 'num_samples' number of spot counts.
+        spot_counts         :   List of integers. The number of elements in this
+                                list is the same as 'num_samples'.
         """
         if dispersion_factor == 0:        
             return [mean]*num_samples
         elif dispersion_factor < 1:
-            raise ValueError("dispersion_factor must be greater than or equal to 1")
+            raise ValueError("Dispersion_factor must be an integer greater than or equal to 1, or 0.")
         elif dispersion_factor == 1:
             return list(np.random.poisson(mean, num_samples))
         else:    
@@ -578,180 +620,214 @@ class Experiment:
         return peptide_sequences
 
     def simulate_peptide_spot_counts(
-            self, 
-            label_dict: dict
-    ) -> dict:
+            self,
+            label_dict: Dict[str, int]
+    ) -> Dict[str, List[int]]:
         """
-        Given a list of peptide sequences and their immunogenicity labels,
-        simulate the number of spots sampled for each peptide for a given
-        coverage.
+        Given a list of peptide_ids and their immunogenicity labels,
+        simulate the number of spots sampled for each peptide for all
+        coverages.
 
         Parameters
         ----------
-        labels          :   Dictionary of ground truth labels;
-                            key = peptide ID.
-                            value = label (0 or 1).
+        label_dict      :   Dictionary of ground truth labels;
+                            key     = peptide ID.
+                            value   = label (0 or 1).
 
         Returns
         -------
-        spot_counts     :   Dictionary; 
-                            key = peptide ID.
-                            value = List[int]; each element corresponds to the spot count at the indexed coverage.
+        spot_counts     :   Dictionary;
+                            key     = peptide ID.
+                            value   = List[int];
+                                      each element corresponds to the spot count
+                                      at the indexed coverage.
         """
-        peptide_ids = label_dict.keys()
-        # Peptide spot counts per coverage
-        peptide_spot_counts = {peptide_id:[] for peptide_id in peptide_ids}
+        # Step 1. Create dictionary to store peptide spot count per coverage
+        # key   = peptide ID
+        # value = list of spot counts (per coverage)
+        peptide_spot_counts = {}
 
-        # Simulate using random_effects (negative binom)
+        # Step 2. Determine immunogenic and non-immunogenic mean and dispersion factor values
         if self.random_effects:
-            imm_mean = self.mu_immunogenic
-            nonimm_mean = self.mu_nonimmunogenic
-            disp = self.dispersion_factor
-        # Simulate using deterministic (binary) parameters
+            # Simulate using random_effects (negative binom)
+            immunogenic_mean = self.mu_immunogenic
+            non_immunogenic_mean = self.mu_nonimmunogenic
+            dispersion_factor = self.dispersion_factor
         else:
-            imm_mean = 1
-            nonimm_mean = 0
-            disp = 0
-            
-        for peptide_id in peptide_ids:
+            # Simulate using deterministic (binary) parameters
+            immunogenic_mean = 1
+            non_immunogenic_mean = 0
+            dispersion_factor = 0
+
+        # Step 3. Simulate peptide spot counts
+        for peptide_id in label_dict.keys():
             if label_dict[peptide_id] == 1:
-                peptide_spot_counts[peptide_id].append(Experiment.sample_spot_counts(imm_mean, disp, num_samples=self.coverage))   
+                peptide_spot_counts[peptide_id] = Experiment.sample_spot_counts(
+                    mean=immunogenic_mean,
+                    dispersion_factor=dispersion_factor,
+                    num_samples=self.coverage
+                )
             else:
-                peptide_spot_counts[peptide_id].append(Experiment.sample_spot_counts(nonimm_mean, disp, num_samples=self.coverage))
+                peptide_spot_counts[peptide_id] = Experiment.sample_spot_counts(
+                    mean=non_immunogenic_mean,
+                    dispersion_factor=dispersion_factor,
+                    num_samples=self.coverage
+                )
         return peptide_spot_counts
     
+    @staticmethod
     def aggregate_pool_spot_counts(
-            self, 
-            df_configuration: pd.DataFrame,
-            peptide_spot_counts: Dict[str,List[int]]
-    ) -> Dict[int,int]:
+            df_assignment: pd.DataFrame,
+            peptide_spot_counts: Dict[str, List[int]]
+    ) -> pd.DataFrame:
         """
         Aggregate the ELISPOT assay using the optimal peptide pools configuration.
         Determine how spots are sampled for each peptide pool. 
 
         Assumptions:
-            1. The number of spots sampled for each peptide pool follows a negative binomial distribution.
-            2. The number of spots sampled for each peptide pool is independent of the other peptide pools.
-            3. Immunogenic and non-immunogenic peptides have the same shape parameters for the negative binomial distribution, 
-            but different mean parameters. This is because we assume the experimental error/noise is the same for both whereas
-            true immunogenic peptides will likely have more spots than non-immunogenic peptides.
-            4. We assume that having multiple immunogenic peptides in a pool addiditively increases the number of spots sampled
+        1.  The number of spots sampled for each peptide pool follows a
+            negative binomial distribution.
+        2.  The number of spots sampled for each peptide pool is independent
+            of the other peptide pools.
+        3.  Immunogenic and non-immunogenic peptides have the same shape
+            parameters for the negative binomial distribution, but different
+            mean parameters. This is because we assume the experimental
+            error/noise is the same for both whereas true immunogenic
+            peptides will likely have more spots than non-immunogenic peptides.
+        4.  We assume that having multiple immunogenic peptides in a pool
+            additively increases the number of spots sampled.
 
         Parameters
         ----------
-        df_configuration   :   pd.DataFrame with the following columns:
+        df_assignment       :   pd.DataFrame with the following columns:
                                 'coverage_id'
                                 'pool_id'
                                 'peptide_id'
         peptide_spot_counts :   Dictionary;
-                                key = peptide ID.
-                                value = List[int]; each element corresponds to the spot count at the indexed coverage.
-                                
+                                key     =   peptide ID.
+                                value   =   List[int]; each element corresponds
+                                            to the spot count at the indexed
+                                            coverage.
+
         Returns
         -------
-        pool_spot_counts    :   Dictionary;
-                                key = pool ID.
-                                value = total spot count.
+        df_readout          :   pd.DataFrame with the following columns:
+                                'pool_id'
+                                'spot_count'
         """
-        # Step 1. Prepare pool ID dictionary
-        #pools = {}
-        # TODO: Fix the peptide spot count to get the different coverage
-        #for pool_id in df_configuration['pool_id'].unique():                    
+        # Step 1. Aggregate peptide spot count to pool spot counts
+        pool_spot_counts = {} # key = pool ID, value = spot count
+        for peptide_id in peptide_spot_counts.keys():
+            pool_ids = df_assignment.loc[
+                df_assignment['peptide_id'] == peptide_id,
+                'pool_id'
+            ].values.tolist()
+            curr_peptide_spot_counts = peptide_spot_counts[peptide_id]
+            random.shuffle(pool_ids)
+            for i in range(0, len(pool_ids)):
+                curr_pool_id = pool_ids[i]
+                curr_peptide_spot_count = curr_peptide_spot_counts[i]
+                if curr_pool_id not in pool_spot_counts.keys():
+                    pool_spot_counts[curr_pool_id] = 0
+                pool_spot_counts[curr_pool_id] += curr_peptide_spot_count
 
-        peptide_spot_counts = copy.deepcopy(peptide_spot_counts)
-        pool_spot_counts = {i: 0 for i in df_configuration['pool_id'].unique()}
-        # if self.deconvolution_method != 'empirical':
-        #     block_assignment = BlockAssignment.load_from_dataframe(df_assignments=df_configuration)
-        #     pool_spot_counts = convert_spot_counts_to_golfy_spotcounts(
-        #         spot_counts=pool_spot_counts,
-        #         block_assignment=block_assignment
-        #     )
-        for pool in df_configuration['pool_id'].unique():
-            pool_df = df_configuration[df_configuration['pool_id'] == pool]
-            for peptide_id in pool_df['peptide_id']:
-                pool_spot_counts[pool] += peptide_spot_counts[peptide_id][0].pop(-1)
+        # Step 2. Dump data into DataFrame
+        data = {
+            'pool_id': [],
+            'spot_count': []
+        }
+        for key, val in pool_spot_counts.items():
+            data['pool_id'].append(key)
+            data['spot_count'].append(val)
+        return pd.DataFrame(data)
 
-        return pool_spot_counts
-    
     def deconvolve_hit_pools(
             self, 
             pool_spot_counts: Dict[int, int], 
-            method,
-            threshold,
-            alpha=0.05
-    ) -> List[str]:
+            method: Literal['threshold', 'adaptive', 'combined'],
+            threshold: float,
+            alpha: float = 0.05,
+            negative_control_sampling_iters: int = 10000
+    ) -> List[int]:
         """
-        Identify the hit pools given the simulated spot counts for each pool. Pass the hit pools
-        to the deconvolution method implemented by the different solvers. Based on the Empirical Rule (ER) response 
-        definition criteria from hte Moodie et al. (2010) paper: Response definition criteria for ELISPOT assays revisited
+        Identify the hit pools given the simulated spot counts for each pool.
+        Pass the hit pools to the deconvolution method implemented by the
+        different solvers. Based on the Empirical Rule (ER) response definition
+        criteria from hte Moodie et al. (2010) paper: Response definition
+        criteria for ELISPOT assays revisited:
         https://pubmed.ncbi.nlm.nih.gov/20549207/
 
         Parameters
         ----------
         pool_spot_counts    :   Dictionary;
-                                key = pool ID.
-                                value = total spot count.
-        method              :   Method (allowed values: 'threshold', 'adaptive').
-                                'threshold': Identify the hit pools as those with a spot count greater than or equal to the threshold (Dubey et al.).
-                                'adaptive': Identify the hit pools based on the mock wells (DMSO) controls.
-                                'combined': Identify the hit pools based on the mock wells (DMSO) controls and the threshold.                
-        threshold           :   Threshold (default: None). If None, the threshold is set by default based on whether or not random effects are taken into account.
-        alpha               :   Significance level (default: 0.05).  
+                                key     = pool ID.
+                                value   = total spot count.
+        method              :   Method (allowed values: 'threshold', 'adaptive', 'combined').
+
+                                If 'threshold', hit pools are those with
+                                spot counts greater than or equal to the threshold
+                                (Dubey et al.).
+
+                                If 'adaptive', hit pools are identified based
+                                on the control pools (e.g. DMSO).
+
+                                If 'combined', hit pools are identified based
+                                on the control pools (e.g. DMSO) and the threshold.
+        threshold           :   Threshold. If unspecified, the threshold is set
+                                by default based on whether random effects are
+                                taken into account.
+        alpha               :   Significance level (default: 0.05).
+
+        Returns
+        -------
+        hit_pool_ids        :   List of hit pool IDs.
         """
         significance = (1 - alpha) * 100
         if method == 'threshold':
-            hit_pools = [pool_id for pool_id, spot_count in pool_spot_counts.items() if spot_count >= threshold]
+            hit_pool_ids = []
+            for pool_id, spot_count in pool_spot_counts.items():
+                if spot_count >= threshold:
+                    hit_pool_ids.append(pool_id)
         elif method == 'adaptive':
-            assert alpha > 0 and alpha < 1, "alpha must be between 0 and 1."
+            assert 0 < alpha < 1, "alpha must be between 0 and 1."
             if not self.random_effects:
                 raise ValueError("Adaptive thresholding only works with random effects")
+                exit(1)
             # Simulate modified DMSO controls
             # Normal DMSO controls are simulated with the non-immunogenic mean across the whole pool
             # Here we simulate the DMSO controls with the non-immunogenic mean per peptide and add across the whole pool
-            negative_controls = [sum(Experiment.sample_spot_counts(mean=self.mu_nonimmunogenic, dispersion_factor=self.dispersion_factor, num_samples=self.num_peptides_per_pool)) for _ in range(10000)]
-            hit_pools = [pool_id for pool_id, spot_count in pool_spot_counts.items() if spot_count >= np.percentile(negative_controls, significance)]
+            negative_controls = []
+            for _ in range(0, negative_control_sampling_iters):
+                negative_controls.append(sum(
+                    Experiment.sample_spot_counts(
+                        mean=self.mu_nonimmunogenic,
+                        dispersion_factor=self.dispersion_factor,
+                        num_samples=self.num_peptides_per_pool
+                )))
+            hit_pool_ids = []
+            for pool_id, spot_count in pool_spot_counts.items():
+                if spot_count >= np.percentile(negative_controls, significance):
+                    hit_pool_ids.append(pool_id)
         elif method == 'combined':
-            thresholded_pools = [pool_id for pool_id, spot_count in pool_spot_counts.items() if spot_count >= threshold]
-            negative_controls = [sum(Experiment.sample_spot_counts(mean=self.mu_nonimmunogenic, dispersion_factor=self.dispersion_factor, num_samples=self.num_peptides_per_pool)) for _ in range(10000)]
-            adaptive_pools = [pool_id for pool_id, spot_count in pool_spot_counts.items() if spot_count >= np.percentile(negative_controls, significance)]
-            hit_pools = list(set(thresholded_pools + adaptive_pools))
+            thresholded_pool_ids = []
+            for pool_id, spot_count in pool_spot_counts.items():
+                if spot_count >= threshold:
+                    thresholded_pool_ids.append(pool_id)
+            negative_controls = []
+            for _ in range(negative_control_sampling_iters):
+                negative_controls.append(sum(
+                    Experiment.sample_spot_counts(
+                        mean=self.mu_nonimmunogenic,
+                        dispersion_factor=self.dispersion_factor,
+                        num_samples=self.num_peptides_per_pool
+                )))
+            adaptive_pool_ids = []
+            for pool_id, spot_count in pool_spot_counts.items():
+                if spot_count >= np.percentile(negative_controls, significance):
+                    adaptive_pool_ids.append(pool_id)
+            hit_pool_ids = list(set(thresholded_pool_ids + adaptive_pool_ids))
         else:
             raise ValueError("Invalid method. Please choose from ['threshold', 'adaptive', or 'combined'].")
-        return hit_pools
+            exit(1)
+        return hit_pool_ids
 
-    def deconvolve_hit_peptides(
-            self,
-            hit_pool_ids: List[int],
-            df_assignment: pd.DataFrame,
-            min_coverage: int
-    ) -> pd.DataFrame:
-        """
-        Deconvolves hit peptide IDs.
-
-        Parameters
-        ----------
-        hit_pool_ids        :   List of pool IDs.
-        df_configuration    :   pd.DataFrame with the following columns:
-                                'coverage_id'
-                                'pool_id'
-                                'peptide_id'
-                                'peptide_sequence'
-        min_coverage        :   Minimum coverage.
-    
-        Returns
-        -------
-        df_hits             :   DataFrame with the following columns:
-                                'peptide_id'
-                                'peptide_sequence'
-                                'pool_ids'
-                                'num_coverage'
-                                'deconvolution_result'
-        """
-        deconvolution_result = deconvolve_hit_peptides(
-            hit_pool_ids=hit_pool_ids,
-            df_assignment=df_assignment,
-            num_coverage=min_coverage
-        )
-        return deconvolution_result.to_dataframe()
-        
-    

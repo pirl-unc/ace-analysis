@@ -14,7 +14,7 @@ OUTPUT_DIR = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/proj
 
 if __name__ == "__main__":
     df_all = pd.DataFrame()
-    for tsv_file in glob.glob(DATA_DIR + '/800peptides_10perpool_3x/*results*.tsv'):
+    for tsv_file in glob.glob(DATA_DIR + '/*/*results*.tsv'):
         print(tsv_file)
         df = pd.read_csv(tsv_file, sep='\t')
         df.drop(columns=['preferred_peptide_pairs', 'positive_peptide_sequences'], inplace=True)

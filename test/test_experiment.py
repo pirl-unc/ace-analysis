@@ -1,7 +1,5 @@
-import numpy as np
 import pandas as pd
 from .data import get_data_path
-from acelib.block_design import BlockDesign
 from acelib.block_assignment import BlockAssignment
 from acesim.solver_ace import AceSolver
 from acesim.solver_precomputed_design import PrecomputedSolver
@@ -11,18 +9,17 @@ from acesim.experiment import Experiment
 
 
 def test_experiment_1():
-    # Instantiate solvers
+    # Step 1. Instantiate solvers
     ace_solver = AceSolver(
         name='ace',
         cluster_peptides=True,
-        random_seed=42,
         mode='golfy',
-        trained_model_file=get_data_path(name='seq_sim_trained_model.pt')
+        trained_model_file=get_data_path(name='trained_model_w_negatives.pt')
     )
-    randomized_solver = RandomizedDesignSolver(name='random', random_seed=1)
+    randomized_solver = RandomizedDesignSolver(name='random')
     repeated_solver = RepeatedDesignSolver(name='repeated')
     
-    # Instantiate experiment
+    # Step 2. Instantiate experiment
     experiment = Experiment(
         experiment_id=1,
         num_peptides=25,
@@ -31,7 +28,7 @@ def test_experiment_1():
         coverage=3,
         solvers=[ace_solver, randomized_solver, repeated_solver],
         random_effects=True,
-        df_ref_peptides=pd.read_csv(get_data_path(name='iedb_mmer_all.csv')),
+        df_ref_peptides=pd.read_csv(get_data_path(name='held_out_data_w_negatives.csv')),
         mu_immunogenic=100.0,
         mu_nonimmunogenic=10.0,
         dispersion_factor=2.0,
@@ -40,23 +37,22 @@ def test_experiment_1():
         num_processes=1
     )
 
-    # Run experiment
+    # Step 3. Run experiment
     experiment.run(1)
 
 
 def test_experiment_2():
-    # Instantiate solvers
+    # Step 1. Instantiate solvers
     ace_solver = AceSolver(
         name='ace',
         cluster_peptides=True,
-        random_seed=42,
         mode='golfy',
-        trained_model_file=get_data_path(name='seq_sim_trained_model.pt')
+        trained_model_file=get_data_path(name='trained_model_w_negatives.pt')
     )
-    randomized_solver = RandomizedDesignSolver(name='random', random_seed=1)
+    randomized_solver = RandomizedDesignSolver(name='random')
     repeated_solver = RepeatedDesignSolver(name='repeated')
 
-    # Instantiate experiment
+    # Step 2. Instantiate experiment
     experiment = Experiment(
         experiment_id=1,
         num_peptides=90,
@@ -65,7 +61,7 @@ def test_experiment_2():
         coverage=3,
         solvers=[ace_solver, randomized_solver, repeated_solver],
         random_effects=True,
-        df_ref_peptides=pd.read_csv(get_data_path(name='iedb_mmer_all.csv')),
+        df_ref_peptides=pd.read_csv(get_data_path(name='held_out_data_w_negatives.csv')),
         mu_immunogenic=100.0,
         mu_nonimmunogenic=10.0,
         dispersion_factor=2.0,
@@ -75,12 +71,12 @@ def test_experiment_2():
         num_processes=1
     )
 
-    # Run experiment
+    # Step 3. Run experiment
     experiment.run(1)
 
 
 def test_experiment_3():
-    # Instantiate solvers
+    # Step 1. Instantiate solvers
     block_assignment = BlockAssignment.read_excel_file(
         excel_file=get_data_path('100peptides_10perpool_3x.xlsx'),
         sheet_name='block_assignment'
@@ -90,7 +86,7 @@ def test_experiment_3():
         block_assignment=block_assignment
     )
 
-    # Instantiate experiment
+    # Step 2. Instantiate experiment
     experiment = Experiment(
         experiment_id=1,
         num_peptides=100,
@@ -99,7 +95,7 @@ def test_experiment_3():
         coverage=3,
         solvers=[precomputed_solver],
         random_effects=True,
-        df_ref_peptides=pd.read_csv(get_data_path(name='iedb_mmer_all.csv')),
+        df_ref_peptides=pd.read_csv(get_data_path(name='held_out_data_w_negatives.csv')),
         mu_immunogenic=100.0,
         mu_nonimmunogenic=10.0,
         dispersion_factor=2.0,
@@ -109,5 +105,5 @@ def test_experiment_3():
         num_processes=1
     )
 
-    # Run experiment
+    # Step 3. Run experiment
     experiment.run(1)

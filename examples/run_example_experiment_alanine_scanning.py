@@ -4,48 +4,48 @@ from acesim import Experiment, AceSolver, RandomizedDesignSolver, RepeatedDesign
 
 
 NUM_PROCESSES = 6
-NUM_ITERATIONS = 10
-REFERENCE_PEPTIDES_CSV_FILE = '/Users/leework/Documents/Research/projects/project_ace/scripts/ace-analysis/test/data/iedb_mmer_all.csv'
+NUM_ITERATIONS = 100
+REFERENCE_PEPTIDES_CSV_FILE = '/Users/leework/Documents/Research/projects/project_ace/data/raw/held_out_data_w_negatives.csv'
+TRAINED_MODEL_FILE = '/Users/leework/Documents/Research/projects/project_ace/data/raw/trained_model_w_negatives.pt'
 
 
 if __name__ == "__main__":
     ace_solver_1 = AceSolver(
         name='ace_golfy_clusteron',
         cluster_peptides=True,
-        random_seed=Experiment.generate_random_seed(),
         mode='golfy',
         golfy_allow_extra_pools=False,
-        trained_model_file='/Users/leework/Documents/Research/projects/project_ace/scripts/ace-analysis/notebooks/models/seq_sim_trained_model.pt'
+        trained_model_file=TRAINED_MODEL_FILE
     )
     ace_solver_2 = AceSolver(
         name='ace_golfy_clusteroff',
         cluster_peptides=False,
-        random_seed=Experiment.generate_random_seed(),
         mode='golfy',
         golfy_allow_extra_pools=False,
-        trained_model_file='/Users/leework/Documents/Research/projects/project_ace/scripts/ace-analysis/notebooks/models/seq_sim_trained_model.pt'
+        trained_model_file=''
     )
-    randomized_solver = RandomizedDesignSolver(name='random', random_seed=1)
+    randomized_solver = RandomizedDesignSolver(name='random')
     repeated_solver = RepeatedDesignSolver(name='repeated')
     experiment = Experiment(
-        experiment_id=random.randint(1,1000000),
+        experiment_id=1,
         num_peptides=90,
         num_peptides_per_pool=9,
         coverage=3,
-        num_positives=10,
+        num_positives=9,
         peptide_sampling_method='alanine_scanning',
+        random_effects=True,
         solvers=[ace_solver_1, ace_solver_2, randomized_solver, repeated_solver],
         df_ref_peptides=pd.read_csv(REFERENCE_PEPTIDES_CSV_FILE),
         num_processes=NUM_PROCESSES
     )
     df_results, df_assignments = experiment.run(num_iterations=NUM_ITERATIONS)
     df_results.to_csv(
-        'alanine_scanning_results.tsv',
+        'outputs/example_alanine_scanning_results.tsv',
         sep='\t',
         index=False
     )
     df_assignments.to_csv(
-        'alanine_scanning_assignments.tsv',
+        'outputs/example_alanine_scanning_assignments.tsv',
         sep='\t',
         index=False
     )

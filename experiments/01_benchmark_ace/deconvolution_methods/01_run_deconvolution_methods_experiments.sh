@@ -5,7 +5,7 @@
 #SBATCH -n 64 # Number of cores
 #SBATCH --mem=256G
 #SBATCH --job-name=run-deconvolution-methods-experiments
-#SBATCH -o 01_run_deconvolution_methods_experiments.out
+#SBATCH -o 01_run_deconvolution_methods_experiments_slurm-%A_%a.out
 
 export OMP_NUM_THREADS=1
 python 01_run_deconvolution_methods_experiments.py

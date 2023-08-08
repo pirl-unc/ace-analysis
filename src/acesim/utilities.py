@@ -63,6 +63,31 @@ def convert_block_assignment_to_golfy_design(
     )
     return design, peptide_idx_to_id_dict
 
+def convert_golfy_design_to_block_assignment(
+        design: Design
+) -> BlockAssignment:
+    """
+    Converts a golfy Design object to BlockAssignment object.
+
+    Parameters
+    ----------
+    design              :   Golfy Design object.
+
+    Returns
+    -------
+    block_assignment    :   BlockAssignment object.
+    """
+    block_assignment = BlockAssignment()
+    for replicate_idx in design.assignments.keys():
+        for pool_idx in design.assignments[replicate_idx].keys():
+            for peptide_idx in design.assignments[replicate_idx][pool_idx]:
+                block_assignment.add_peptide(
+                    coverage=replicate_idx+1,
+                    pool=pool_idx+1,
+                    peptide_id='peptide_%i' % (peptide_idx + 1),
+                    peptide_sequence=''
+                )
+    return block_assignment
 
 def convert_spot_counts_to_golfy_spotcounts(
         spot_counts: Dict[int, int], 
@@ -82,8 +107,6 @@ def convert_spot_counts_to_golfy_spotcounts(
     -------
     counts                  :   golfy SpotCounts.
     """
-
-
     counts = {}
     for coverage in block_assignment.assignments.keys():
         counts[coverage-1] = {}

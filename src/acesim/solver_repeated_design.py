@@ -3,6 +3,7 @@ The purpose of this python3 script is to implement the Bogey dataclass
 """
 
 
+import math
 import random
 import pandas as pd
 from dataclasses import dataclass, field
@@ -19,7 +20,8 @@ class RepeatedDesignSolver(Solver):
             self,
             peptides: Peptides,
             num_peptides_per_pool: int,
-            num_coverage: int
+            num_coverage: int,
+            random_seed: int
     ) -> Tuple[BlockAssignment, PeptidePairs]:
         """
         Randomly generates an ELISpot configuration.
@@ -29,6 +31,7 @@ class RepeatedDesignSolver(Solver):
         peptides                    :   Peptides.
         num_peptides_per_pool       :   Number of peptides per pool
         num_coverage                :   Number of coverage.
+        random_seed                 :   Random seed.
 
         Returns
         -------
@@ -40,7 +43,7 @@ class RepeatedDesignSolver(Solver):
         # Step 1. Initialize pools
         pools = {}
         num_peptides = len(df_peptides['peptide_id'].unique())
-        num_pools_per_coverage = int(num_peptides / num_peptides_per_pool)
+        num_pools_per_coverage = math.ceil(num_peptides / num_peptides_per_pool)
 
         for coverage in range(1, num_coverage + 1):
             pools[coverage] = {}

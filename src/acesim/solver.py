@@ -16,6 +16,7 @@ class Solver:
             df_peptides: pd.DataFrame,
             num_peptides_per_pool: int,
             num_coverage: int,
+            random_seed: int,
             **kwargs
     ) -> pd.DataFrame:
         raise Exception("Subclass must implement 'generate_assignment' method")
