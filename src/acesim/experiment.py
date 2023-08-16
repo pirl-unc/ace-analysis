@@ -57,7 +57,7 @@ class Experiment:
     # Define the simulation parameters
     df_ref_peptides: pd.DataFrame # reference database
     random_effects: bool = False
-    peptide_sampling_method: Literal['', 'levenshtein', 'alanine'] = ''
+    peptide_sampling_method: Literal['', 'levenshtein', 'alanine_scanning'] = ''
     peptide_length: int = 9
     mu_immunogenic: float = 100.0
     mu_nonimmunogenic: float = 10.0
