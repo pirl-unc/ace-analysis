@@ -8,8 +8,8 @@ import pandas as pd
 import glob
 
 
-DATA_DIR = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/processed/01_benchmark_ace/06_real_world_datasets/tiling_window_covid_spike_9mers/1265peptides_20perpool_3x'
-OUTPUT_DIR = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/processed/01_benchmark_ace/06_real_world_datasets/tiling_window_covid_spike_9mers/1265peptides_20perpool_3x'
+DATA_DIR = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/processed/01_benchmark_ace/06_real_world_datasets/tiling_window_covid_spike_9mers/1265peptides_10perpool_3x'
+OUTPUT_DIR = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/processed/01_benchmark_ace/06_real_world_datasets/tiling_window_covid_spike_9mers/1265peptides_10perpool_3x'
 
 
 if __name__ == "__main__":

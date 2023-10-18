@@ -8,10 +8,11 @@ import pandas as pd
 import random
 import tracemalloc
 from acelib.main import run_ace_generate
-from acelib.utilities import convert_dataframe_to_peptides
 
 
+REFERENCE_PEPTIDES_CSV_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/strict_holdout_negatives.csv'
 DESIGN_CSV_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/runtime_memory_designs.csv'
+TRAINED_MODEL_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/trained_model_w_data_augmentation_b3000.pt'
 OUTPUT_DIR = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/processed/02_benchmark_ace_runtime_memory'
 ITERATIONS = 10
 GOLFY_MAX_ITERS = 2000
@@ -27,6 +28,7 @@ def generate_peptides_dataframe(num_peptides: int):
 
 
 if __name__ == '__main__':
+    df_ref_peptides = pd.read_csv(REFERENCE_PEPTIDES_CSV_FILE)
     df_designs = pd.read_csv(DESIGN_CSV_FILE)
     data = {
         'num_peptides': [],
@@ -40,9 +42,12 @@ if __name__ == '__main__':
         num_peptides = value['num_peptides']
         num_peptides_per_pool = value['num_peptides_per_pool']
         num_coverage = value['num_coverage']
-        df_peptides = generate_peptides_dataframe(num_peptides=num_peptides)
-        peptides = convert_dataframe_to_peptides(df_peptides=df_peptides)
-
+        peptides = []
+        df_peptides = df_ref_peptides.sample(n=num_peptides)
+        peptide_idx = 1
+        for index, row in df_peptides.iterrows():
+            peptides.append(('peptide_%i' % peptide_idx, row['Epitope']))
+            peptide_idx += 1
         for i in range(0, ITERATIONS):
             # Runtime
             start_datetime = datetime.datetime.now()
@@ -50,8 +55,8 @@ if __name__ == '__main__':
                 peptides=peptides,
                 num_peptides_per_pool=num_peptides_per_pool,
                 num_coverage=num_coverage,
-                cluster_peptides=False,
-                trained_model_file='',
+                cluster_peptides=True,
+                trained_model_file=TRAINED_MODEL_FILE,
                 mode='golfy',
                 golfy_max_iters=GOLFY_MAX_ITERS,
                 golfy_allow_extra_pools=GOLFY_ALLOW_EXTRA_POOLS,
@@ -66,8 +71,8 @@ if __name__ == '__main__':
                 peptides=peptides,
                 num_peptides_per_pool=num_peptides_per_pool,
                 num_coverage=num_coverage,
-                cluster_peptides=False,
-                trained_model_file='',
+                cluster_peptides=True,
+                trained_model_file=TRAINED_MODEL_FILE,
                 mode='golfy',
                 golfy_max_iters=GOLFY_MAX_ITERS,
                 golfy_allow_extra_pools=GOLFY_ALLOW_EXTRA_POOLS,

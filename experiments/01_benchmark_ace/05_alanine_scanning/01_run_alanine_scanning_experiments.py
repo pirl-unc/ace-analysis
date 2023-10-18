@@ -6,10 +6,10 @@ from acesim import Experiment, AceSolver, RandomizedDesignSolver, RepeatedDesign
 
 NUM_PROCESSES = 64
 NUM_ITERATIONS = 100
-REFERENCE_PEPTIDES_CSV_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/strict_holdout_negatives.csv'
+REFERENCE_PEPTIDES_CSV_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/held_out_data_w_data_leak.csv'
 DESIGNS_CSV_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/alanine_scanning_designs.csv'
 TRAINED_MODEL_FILE = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/raw/trained_model_w_data_augmentation_b3000.pt'
-OUTPUT_DIR = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/processed/01_benchmark_ace/05_alanine_scanning'
+OUTPUT_DIR = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/processed/01_benchmark_ace/05_alanine_scanning/training_data'
 
 
 def get_solvers():

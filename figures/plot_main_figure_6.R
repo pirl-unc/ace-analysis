@@ -34,7 +34,7 @@ figure.panel.a <- ggplot(df.plot, aes(x = num_peptides, y = runtime_seconds)) +
                   size = POINTRANGE.SIZE, 
                   color = POINTRANGE.COLOR.HEX) + 
   xlab("Number of Peptides") + ylab("Runtime (Seconds)") + ggtitle("10 Peptides per Pool | 3x Coverage") +
-  scale_y_continuous(limits = c(0, 10), breaks = seq(0,10,1)) +
+  scale_y_continuous(limits = c(0, 50), breaks = seq(0,50,5)) +
   theme_pubr() + COMMON.THEME
 
 # Step 3. Plot panel B
@@ -44,7 +44,7 @@ df.plot.temp <- df.plot %>%
 figure.panel.b <- ggplot(df.plot.temp, aes(x = num_peptides, y = peak_memory_mb)) +
   geom_col(fill = BAR.COLOR.HEX, color = "black", width = BAR.WIDTH) +
   xlab("Number of Peptides") + ylab("Average Peak Memory (Megabytes)") + ggtitle("10 Peptides per Pool | 3x Coverage") +
-  scale_y_continuous(limits = c(0, 7), breaks = seq(0,7,1)) +
+  scale_y_continuous(limits = c(0, 8), breaks = seq(0,8,2)) +
   theme_pubr() + COMMON.THEME
 
 # Step 4. Plot panel C
@@ -65,7 +65,7 @@ figure.panel.c <- ggplot(df.plot, aes(x = num_peptides_per_pool, y = runtime_sec
                   size = POINTRANGE.SIZE,
                   color = POINTRANGE.COLOR.HEX) + 
   xlab("Number of Peptides per Pool") + ylab("Runtime (Seconds)") + ggtitle("1000 Peptides | 3x Coverage") +
-  scale_y_continuous(limits = c(0, 18), breaks = seq(0,18,2)) +
+  scale_y_continuous(limits = c(0, 70), breaks = seq(0,70,10)) +
   theme_pubr() + COMMON.THEME
 
 # Step 5. Plot panel D
@@ -95,7 +95,7 @@ figure.panel.e <- ggplot(df.plot, aes(x = num_coverage, y = runtime_seconds)) +
                   size = POINTRANGE.SIZE,
                   color = POINTRANGE.COLOR.HEX) + 
   xlab("Coverage") + ylab("Runtime (Seconds)") + ggtitle("1000 Peptides | 10 Peptides per Pool") +
-  scale_y_continuous(limits = c(0, 35), breaks = seq(0,35,5)) +
+  scale_y_continuous(limits = c(0, 70), breaks = seq(0,70,5)) +
   theme_pubr() + COMMON.THEME
 
 # Step 7. Plot panel F

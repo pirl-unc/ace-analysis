@@ -1,9 +1,9 @@
 #!/bin/bash
 
-#SBATCH --time=48:00:00
+#SBATCH --time=72:00:00
 #SBATCH -N 1 # Ensure that all cores are on one machine
 #SBATCH -n 1 # Number of cores
-#SBATCH --mem=16G
+#SBATCH --mem=32G
 #SBATCH --job-name=run-ace-runtime-memory-benchmark-experiment
 #SBATCH -o 01_run_runtime_memory_benchmark_experiment_slurm.out
 

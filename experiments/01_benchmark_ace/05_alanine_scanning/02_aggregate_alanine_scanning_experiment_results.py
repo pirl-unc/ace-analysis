@@ -8,8 +8,8 @@ import pandas as pd
 import glob
 
 
-DATA_DIR = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/processed/01_benchmark_ace/05_alanine_scanning'
-OUTPUT_DIR = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/processed/01_benchmark_ace/05_alanine_scanning'
+DATA_DIR = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/processed/01_benchmark_ace/05_alanine_scanning/training_data'
+OUTPUT_DIR = '/datastore/lbcfs/collaborations/pirl/members/jinseok/projects/project_ace/data/processed/01_benchmark_ace/05_alanine_scanning/training_data'
 
 
 if __name__ == "__main__":
