@@ -1,0 +1,124 @@
+---
+title: "Plot Supplementary Figure ACE Deconvolution vs Strom"
+output: html_notebook
+---
+
+## 01. Load libraries
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(ggpubr)
+library(ggsignif)
+library(precrec)
+```
+
+## 02. Define constants
+
+```{r}
+OUTPUT.DIR <- "/Users/leework/Documents/Research/projects/project_ace/data/processed/figures"
+EVALUATION.RESULTS.DIR <- "/Users/leework/Documents/Research/projects/project_ace/data/processed/02_benchmark_ace/01_benchmark_against_existing_tools/06_evaluation_results/300immunogenic_30nonimmunogenic_1dispersion_fnr0.00"
+MIN.SIMULATIONS <- 20
+SOLVER.COLORS <- c("ace-s_cem" = "#845EC2",
+                   "ace-s_em" = "#b15928",
+                   "ace-s_emp" = "#cab2d6",
+                   "ace-s_lasso" = "#fb9a99",
+                   "ace-s_strom" = "#323232")
+```
+
+## 03. Plot
+
+```{r}
+df.evaluation.results <- data.frame()
+for (tsv.file in Sys.glob(paste0(EVALUATION.RESULTS.DIR, "/*evaluation_results.tsv"))) {
+  df.temp <- read.csv(tsv.file, sep = "\t")
+  df.temp$method <- paste0(df.temp$configuration_method, "_", df.temp$deconvolution_method)
+  df.evaluation.results <- rbind(df.evaluation.results, df.temp)
+}
+df.evaluation.results <- df.evaluation.results %>%
+  dplyr::filter(method %in% c("ace-s_ace-cem",
+                              "ace-s_ace-em",
+                              "ace-s_ace-empirical",
+                              "ace-s_ace-lasso",
+                              "ace-s_strom"))
+df.evaluation.results$method <- plyr::mapvalues(
+  x = df.evaluation.results$method,
+  from = c("ace-s_ace-cem",
+           "ace-s_ace-em",
+           "ace-s_ace-empirical",
+           "ace-s_ace-lasso",
+           "ace-s_strom"),
+  to = c("ace-s_cem",
+         "ace-s_em",
+         "ace-s_emp",
+         "ace-s_lasso",
+         "ace-s_strom")
+)
+
+plots <- list()
+plots.idx <- 1
+for (num.immunogenic.peptides in c(1,2,3,4,5,6,7,8,9,10,15,20,25,30,40)) {
+  list.scores <- list()
+  list.labels <- list()
+  dsids <- c()
+  mod.names <- c()
+  idx <- 1
+  dsid <- 1
+  for (method in unique(df.evaluation.results$method)) {
+    df.temp <- df.evaluation.results[
+        (df.evaluation.results$num_peptides == 120) &
+        (df.evaluation.results$method == method) &
+        (df.evaluation.results$num_immunogenic_peptides == num.immunogenic.peptides),
+    ]
+    if (length(unique(df.temp$rep_id)) < MIN.SIMULATIONS) {
+      next
+    }
+    for (rep.id in unique(df.temp$rep_id)) {
+      df.temp_ <- df.temp[df.temp$rep_id == rep.id,]
+      list.scores[[idx]] <- df.temp_$peptide_spot_count
+      list.labels[[idx]] <- df.temp_$binding
+      dsids <- c(dsids, dsid)
+      mod.names <- c(mod.names, method)
+      idx <- idx + 1
+    }
+    dsid <- dsid + 1
+  }
+  smmdat <- mmdata(scores = list.scores, 
+                   labels = list.labels, 
+                   modnames = mod.names, 
+                   dsids = dsids)
+  smcurves <- evalmod(smmdat, cb_alpha = 0.05)
+  df.auc.ci <- auc_ci(smcurves)
+  df.auc.ci.prc <- df.auc.ci[df.auc.ci$curvetypes == "PRC",]
+  updated.legend <- c()
+  for (i in 1:nrow(df.auc.ci.prc)) {
+    df.curr <- df.auc.ci.prc[i,]
+    curr.updated.legend <- c(paste0(df.curr$modnames, " (", round(df.curr$mean, 3), ")"))
+    names(curr.updated.legend) <- df.curr$modnames
+    updated.legend <- c(updated.legend, curr.updated.legend)
+  }
+  g <- autoplot(object = smcurves, curvetype = "PRC", show_cb = F)
+  g <- g + 
+    ggtitle(paste("120 peptides", num.immunogenic.peptides, "positives")) + 
+    scale_color_manual(values = SOLVER.COLORS,
+                       labels = updated.legend) +
+    labs(color = NULL) +
+    theme(plot.title = element_text(size = 12),
+          axis.title = element_text(size = 12),
+          axis.text = element_text(size = 12),
+          legend.text = element_text(size = 8),
+          legend.position = c(0.65, 0.1),
+          legend.spacing.x = unit(0.05, 'cm'),
+          legend.spacing.y = unit(0.05, 'cm'),
+          legend.margin = margin(0,0,0,0),
+          legend.box.margin = margin(0,0,0,0),
+          plot.margin = unit(c(0.01, 0.01, 0.01, 0.01), "lines"))
+  plots[[plots.idx]] <- g
+  plots.idx <- plots.idx + 1
+}
+
+g <- ggarrange(plotlist = plots, nrow = 5, ncol = 3, align = "hv")
+ggsave(filename = paste0(OUTPUT.DIR, "/supplementary_figure_ace_vs_strom_deconvolution_methods_120peptides.pdf"), 
+       plot = g, width = 16, height = 16, dpi = 300)
+```

@@ -1,0 +1,95 @@
+---
+title: "Plot Supplementary Figure 2"
+output: html_notebook
+---
+
+## 01. Load libraries
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(ggpubr)
+library(ggsignif)
+```
+
+## 02. Define constants
+
+```{r}
+OUTPUT.DIR <- "/Users/leework/Documents/Research/projects/project_ace/data/processed/figures"
+LINE.WIDTH <- 0.618
+BG.FILL.HEX <- "#fcf3f8"
+MEAN.HEX <- "#a22867"
+UPPER.HEX <- "#e08284"
+LOWER.HEX <- "#d1458e"
+VIOLATIONS.HEX <- "#a22867"
+```
+
+## 03. Plot
+
+```{r}
+TSV.FILE <- "/Users/leework/Documents/Research/projects/project_ace/data/processed/01_precision_recall_violations_iterations/evaluations.tsv"
+df <- read.csv(TSV.FILE, sep = "\t")
+df.plot <- df %>%
+  dplyr::group_by(iteration) %>%
+  dplyr::summarise(precision.mean = mean(precision),
+                   precision.std = sd(precision),
+                   sensitivity.mean = mean(sensitivity),
+                   sensitivity.std = sd(sensitivity),
+                   violations.mean = mean(num_violations),
+                   violations.std = sd(num_violations))
+
+df.plot.precision <- df.plot %>%
+  dplyr::reframe(iteration = iteration,
+                 precision.mean = precision.mean,
+                 precision.lower = ifelse(precision.mean - precision.std < 0, 0, precision.mean - precision.std),
+                 precision.upper = ifelse(precision.mean + precision.std > 1, 1, precision.mean + precision.std))
+plot.precision <- ggplot(df.plot.precision, aes(x = iteration)) +
+  geom_ribbon(aes(ymax = precision.upper, ymin = precision.lower), fill = BG.FILL.HEX) +
+  geom_line(aes(y = precision.mean), color = MEAN.HEX, linewidth = LINE.WIDTH) +
+  geom_line(aes(y = precision.lower), color = LOWER.HEX, linewidth = LINE.WIDTH) +
+  geom_line(aes(y = precision.upper), color = UPPER.HEX, linewidth = LINE.WIDTH) +
+  xlab("Iteration") + ylab("Precision") +
+  scale_x_continuous(limits = c(0, 100), breaks = c(0, 25, 50, 75, 100), expand = c(0,0)) +
+  scale_y_continuous(limits = c(0,1), breaks = c(0,0.25,0.5,0.75,1.0), expand = c(0,0)) +
+  theme_pubr() +
+  theme(axis.title = element_text(size = 12),
+        axis.text = element_text(size = 12))
+
+df.plot.sensitivity <- df.plot %>%
+  dplyr::reframe(iteration = iteration,
+                 sensitivity.mean = sensitivity.mean,
+                 sensitivity.lower = ifelse(sensitivity.mean - sensitivity.std < 0, 0, sensitivity.mean - sensitivity.std),
+                 sensitivity.upper = ifelse(sensitivity.mean + sensitivity.std > 1, 1, sensitivity.mean + sensitivity.std))
+plot.sensitivity <- ggplot(df.plot.sensitivity, aes(x = iteration)) +
+  geom_ribbon(aes(ymax = sensitivity.upper, ymin = sensitivity.lower), fill = BG.FILL.HEX) +
+  geom_line(aes(y = sensitivity.mean), color = MEAN.HEX, linewidth = LINE.WIDTH) +
+  geom_line(aes(y = sensitivity.lower), color = LOWER.HEX, linewidth = LINE.WIDTH) +
+  geom_line(aes(y = sensitivity.upper), color = UPPER.HEX, linewidth = LINE.WIDTH) +
+  xlab("Iteration") + ylab("Sensitivity") +
+  scale_x_continuous(limits = c(0, 100), breaks = c(0, 25, 50, 75, 100), expand = c(0,0)) +
+  scale_y_continuous(limits = c(0,1), breaks = c(0,0.25,0.5,0.75,1.0), expand = c(0,0)) +
+  theme_pubr() +
+  theme(axis.title = element_text(size = 12),
+        axis.text = element_text(size = 12))
+
+df.plot.violations <- df.plot %>%
+  dplyr::reframe(iteration = iteration,
+                 violations.mean = violations.mean,
+                 violations.lower = ifelse(violations.mean - violations.std < 0, 0, violations.mean - violations.std),
+                 violations.upper = ifelse(violations.mean + violations.std > 1, 1, violations.mean + violations.std))
+plot.violations <- ggplot(df.plot.violations, aes(x = iteration)) +
+  geom_line(aes(y = violations.mean), color = VIOLATIONS.HEX, linewidth = LINE.WIDTH) +
+  xlab("Iteration") + ylab("Number of Violations") +
+  scale_x_continuous(limits = c(0, 100), breaks = c(0, 25, 50, 75, 100), expand = c(0,0)) +
+  scale_y_continuous(limits = c(0,8000), breaks = c(0,2000,4000,6000,8000), expand = c(0,0)) +
+  theme_pubr() +
+  theme(axis.title = element_text(size = 12),
+        axis.text = element_text(size = 12))
+
+p <- ggarrange(plotlist = list(plot.precision, plot.sensitivity, plot.violations),
+               ncol = 1, align = "hv")
+print(p)
+ggsave(plot = p, filename = paste0(OUTPUT.DIR, "/supplementary_figure_2.pdf"),
+       width = 6, height = 6, dpi = 300)
+```

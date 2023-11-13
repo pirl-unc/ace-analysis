@@ -3,14 +3,38 @@ The purpose of this python3 script is to implement utility functions
 """
 
 
+import pandas as pd
+from collections import defaultdict
 from golfy.design import Design
 from golfy.types import SpotCounts
 from acelib.block_assignment import BlockAssignment
 from acelib.block_design import BlockDesign
+from acelib.types import *
 from typing import Dict, Iterable, Mapping, Tuple
 
 
 PeptideIndicesToPeptideIds = Mapping[int, str]
+
+
+def convert_peptides_dataframe_to_peptides(df_peptides: pd.DataFrame) -> Peptides:
+    """
+    Converts a peptides Pandas DataFrame to Peptides type.
+
+    Parameters
+    ----------
+    df_peptides     :   Pandas DataFrame with the following columns:
+                        'peptide_id',
+                        'epitope'
+
+    Returns
+    -------
+    peptides        :   Peptides.
+    """
+    peptides = []
+    for peptide_id in df_peptides['peptide_id'].unique():
+        peptide_sequence = df_peptides.loc[df_peptides['peptide_id'] == peptide_id, 'epitope'].values.tolist()[0]
+        peptides.append((peptide_id, peptide_sequence))
+    return peptides
 
 
 def convert_block_assignment_to_golfy_design(

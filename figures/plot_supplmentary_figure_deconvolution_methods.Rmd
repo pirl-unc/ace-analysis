@@ -1,0 +1,253 @@
+---
+title: "Plot Supplementary Figure X"
+output: html_notebook
+---
+
+## 01. Load libraries
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(ggpubr)
+library(ggsignif)
+library(precrec)
+```
+
+## 02. Define constants
+
+```{r}
+OUTPUT.DIR <- "/Users/leework/Documents/Research/projects/project_ace/data/processed/figures"
+EVALUATION.RESULTS.DIR <- "/Users/leework/Documents/Research/projects/project_ace/data/processed/02_benchmark_ace/01_benchmark_against_existing_tools/06_evaluation_results/300immunogenic_30nonimmunogenic_1dispersion_fnr0.00"
+ERRORBAR.WIDTH <- 0.4
+BOXPLOT.WIDTH <- 0.85
+MIN.SIMULATIONS <- 20
+GROUPS <- c(
+  "ace-s_cem",
+  "ace-s_em",
+  "ace-s_emp",
+  "ace-s_lasso",
+  "ace_cem",
+  "ace_em",
+  "ace_emp",
+  "ace_lasso",
+  "random_cem",
+  "random_em",
+  "random_emp",
+  "random_lasso",
+  "repeated_em",
+  "repeated_emp"
+)
+SOLVER.COLORS <- c("ace-s_cem" = "#845EC2",
+                   "ace-s_em" = "#b15928",
+                   "ace-s_emp" = "#cab2d6",
+                   "ace-s_lasso" = "#fb9a99",
+                   "ace_cem" = "#33a02c",
+                   "ace_em" = "#b2df8a",
+                   "ace_emp" = "#1f78b4",
+                   "ace_lasso" = "#a6cee3",
+                   "random_cem" = "#fdbf6f",
+                   "random_em" = "#ff7f00",
+                   "random_lasso" = "#ffff99",
+                   "random_emp" = "#8dd3c7",
+                   "repeated_em" = "#8c510a",
+                   "repeated_emp" = "#ABABAA")
+```
+
+## 03. Plot
+
+```{r}
+# Step 1. Load evaluation data
+df.evaluation.metrics <- data.frame()
+for (tsv.file in Sys.glob(paste0(EVALUATION.RESULTS.DIR, "/*evaluation_metrics.tsv"))) {
+  df.temp <- read.csv(tsv.file, sep = "\t")
+  df.temp$group <- paste0(df.temp$configuration_method, "_", df.temp$deconvolution_method)
+  df.evaluation.metrics <- rbind(df.evaluation.metrics, df.temp)
+}
+df.evaluation.metrics$group <- plyr::mapvalues(
+  x = df.evaluation.metrics$group,
+  from = c("ace-s_ace-cem",
+           "ace-s_ace-em",
+           "ace-s_ace-empirical",
+           "ace-s_ace-lasso",
+           "ace_ace-cem",
+           "ace_ace-em",
+           "ace_ace-empirical",
+           "ace_ace-lasso",
+           "randomized_ace-cem",
+           "randomized_ace-em",
+           "randomized_ace-empirical",
+           "randomized_ace-lasso",
+           "repeated_ace-em",
+           "repeated_ace-empirical",
+           "strandberg_strandberg-background-subtracted",
+           "strandberg_strandberg_bayesian",
+           "strandberg_strandberg-empirical",
+           "ace-s_strom"),
+  to = c("ace-s_cem",
+         "ace-s_em",
+         "ace-s_emp",
+         "ace-s_lasso",
+         "ace_cem",
+         "ace_em",
+         "ace_emp",
+         "ace_lasso",
+         "random_cem",
+         "random_em",
+         "random_emp",
+         "random_lasso",
+         "repeated_em",
+         "repeated_emp",
+         "strandberg_bgs",
+         "strandberg_bay",
+         "strandberg_emp",
+         "ace-s_strom")
+)
+
+# Step 2. Drop any group with fewer than 20 simulations
+for (num.peptides in unique(df.evaluation.metrics$num_peptides)) {
+  for (group in unique(df.evaluation.metrics$group)) {
+    for (num.immunogenic.peptides in unique(df.evaluation.metrics$num_immunogenic_peptides)) {
+      df.matched <- df.evaluation.metrics[
+        (df.evaluation.metrics$num_peptides == num.peptides) &
+        (df.evaluation.metrics$group == group) & 
+        (df.evaluation.metrics$num_immunogenic_peptides == num.immunogenic.peptides),
+      ]
+      if (nrow(df.matched) < MIN.SIMULATIONS) {
+        df.evaluation.metrics <- df.evaluation.metrics[
+          !(df.evaluation.metrics$experiment_id %in% df.matched$experiment_id),
+        ]
+      }
+    }
+  }
+}
+
+# Step 3. Define functions
+PlotBarPlot <- function(df.evaluation.metrics, metric, num.peptides, y.axis.title, title) {
+  df.plot <- df.evaluation.metrics[df.evaluation.metrics$num_peptides == num.peptides,]
+  df.plot <- df.plot %>%
+    dplyr::group_by(group, num_immunogenic_peptides) %>%
+    dplyr::summarise(
+      sd = sd(get(metric)),
+      metric = mean(get(metric))
+    )
+  df.plot$num_immunogenic_peptides <- as.character(df.plot$num_immunogenic_peptides)
+  for (group in unique(df.plot$group)) {
+    for (num.immunogenic.peptides in c("1","2","3","4","5","6","7","8","9","10","15","20","25","30","40")) {
+      df.matched <- df.plot[(df.plot$group == group) & (df.plot$num_immunogenic_peptides == num.immunogenic.peptides),]
+      if (nrow(df.matched) == 0) {
+        df.temp <- data.frame(
+          group = c(group),
+          num_immunogenic_peptides = c(num.immunogenic.peptides),
+          sd = c(0.0),
+          metric = c(0.0)
+        )
+        df.plot <- rbind(df.plot, df.temp)
+      }
+    }
+  }
+  df.plot$num_immunogenic_peptides <- factor(
+    df.plot$num_immunogenic_peptides,
+    levels = c("1","2","3","4","5",
+               "6","7","8","9","10",
+               "15","20","25","30","40")
+  )
+  df.plot$group <- factor(
+    df.plot$group,
+    levels = GROUPS
+  )
+  p <- ggplot(df.plot, aes(x = num_immunogenic_peptides, y = metric, fill = group)) +
+    geom_col(width = BOXPLOT.WIDTH, colour = "black", position = "dodge")
+  if (metric == "precision" || metric == "sensitivity") {
+    p <- p + geom_errorbar(aes(ymin = metric - sd, 
+                               ymax = ifelse(metric + sd > 1, 1, metric + sd)), 
+                           width = ERRORBAR.WIDTH, position = position_dodge(BOXPLOT.WIDTH)) +
+          scale_y_continuous(limits = c(0,1), breaks = c(0.00, 0.25, 0.50, 0.75, 1.00), expand = c(0,0))
+  }
+  if (metric == "predicted_total_pools") {
+    p <- p + geom_errorbar(aes(ymin = metric - sd, ymax = metric + sd),
+                           width = ERRORBAR.WIDTH, position = position_dodge(BOXPLOT.WIDTH))
+  }
+  p <- p + xlab("Number of Positive Peptides") + ylab(y.axis.title) + ggtitle(title) +
+    scale_fill_manual(values = SOLVER.COLORS) +
+    guides(fill = guide_legend(nrow = 2, byrow = TRUE)) +
+    theme_pubr() +
+    theme(plot.title = element_text(size = 18, hjust = 0.5),
+          axis.title = element_text(size = 18),
+          axis.text.x = element_text(size = 18),
+          axis.text.y = element_text(size = 18),
+          panel.grid.major.x = element_blank(),
+          panel.grid.minor.y = element_blank(),
+          legend.title = element_text(size = 18),
+          legend.text = element_text(size = 18))
+  return(p)
+}
+
+# Step 4. Generate plots
+df.evaluation.metrics <- df.evaluation.metrics[df.evaluation.metrics$group %in% GROUPS,]
+plot.120.peptides.precision <- PlotBarPlot(
+  df.evaluation.metrics = df.evaluation.metrics,
+  metric = "precision",
+  num.peptides = 120,
+  y.axis.title = "Precision",
+  title = "120 peptides precision"
+)
+plot.120.peptides.recall <- PlotBarPlot(
+  df.evaluation.metrics = df.evaluation.metrics, 
+  metric = "sensitivity",
+  num.peptides = 120, 
+  y.axis.title = "Recall",
+  title = "120 peptides recall"
+)
+plot.120.peptides.total.pools <- PlotBarPlot(
+  df.evaluation.metrics = df.evaluation.metrics, 
+  metric = "predicted_total_pools",
+  num.peptides = 120, 
+  y.axis.title = "Total Number of Pools",
+  title = "120 peptides pools"
+)
+plot.800.peptides.precision <- PlotBarPlot(
+  df.evaluation.metrics = df.evaluation.metrics,
+  metric = "precision",
+  num.peptides = 800,
+  y.axis.title = "Precision",
+  title = "800 peptides precision"
+)
+plot.800.peptides.recall <- PlotBarPlot(
+  df.evaluation.metrics = df.evaluation.metrics,
+  metric = "sensitivity",
+  num.peptides = 800,
+  y.axis.title = "Recall",
+  title = "800 peptides recall"
+)
+plot.800.peptides.total.pools <- PlotBarPlot(
+  df.evaluation.metrics = df.evaluation.metrics, 
+  metric = "predicted_total_pools",
+  num.peptides = 800, 
+  y.axis.title = "Total Number of Pools",
+  title = "800 peptides pools"
+)
+
+plot.120 <- ggarrange(plotlist = list(
+  plot.120.peptides.precision,
+  plot.120.peptides.recall,
+  plot.120.peptides.total.pools),
+  heights = c(3,2,3),
+  nrow = 3, ncol = 1, align = "hv", common.legend = T
+)
+
+plot.800 <- ggarrange(plotlist = list(
+  plot.800.peptides.precision,
+  plot.800.peptides.recall,
+  plot.800.peptides.total.pools),
+  heights = c(3,2,3),
+  nrow = 3, ncol = 1, align = "hv", common.legend = T
+)
+```
+
+```{r}
+ggsave(filename = paste0(OUTPUT.DIR, "/supplementary_figure_all_methods_120peptides.pdf"), 
+       plot = plot.120, width = 16, height = 16, dpi = 300)
+ggsave(filename = paste0(OUTPUT.DIR, "/supplementary_figure_all_methods_800peptides.pdf"), 
+       plot = plot.800, width = 16, height = 16, dpi = 300)
+```

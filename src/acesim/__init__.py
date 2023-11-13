@@ -1,14 +1,18 @@
 from .experiment import Experiment
-from .solver_ace import AceSolver
-from .solver_precomputed_design import PrecomputedSolver
-from .solver_randomized_design import RandomizedDesignSolver
-from .solver_repeated_design import RepeatedDesignSolver
+from .configurator_ace import AceConfigurator
+from .configurator_strandberg import StrandbergConfigurator
+from .configurator_randomized import RandomizedDesignConfigurator
+from .configurator_repeated import RepeatedDesignConfigurator
+from .deconvolver_ace import AceDeconvolver
+from .deconvolver_precomputed import PrecomputedDeconvolver
 
 
 __all__ = [
     'Experiment',
-    'AceSolver',
-    'PrecomputedSolver',
-    'RandomizedDesignSolver',
-    'RepeatedDesignSolver'
+    'AceConfigurator',
+    'StrandbergConfigurator',
+    'RandomizedDesignConfigurator',
+    'RepeatedDesignConfigurator',
+    'AceDeconvolver',
+    'PrecomputedDeconvolver'
 ]

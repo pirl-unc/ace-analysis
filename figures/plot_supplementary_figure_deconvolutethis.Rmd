@@ -1,0 +1,90 @@
+---
+title: "Plot Supplementary Figure"
+output: html_notebook
+---
+
+## 01. Load libraries
+
+```{r}
+library(ggplot2)
+```
+
+## 02. Define constants 
+
+```{r}
+EVALUATION.RESULTS.TSV.FILE <- "/Users/leework/Documents/Research/projects/project_ace/data/processed/02_benchmark_ace/04_benchmark_deconvolutethis_designs/04_evaluation_results/300immunogenic_30nonimmunogenic_0dispersion_fnr0.00/configuration_ace-s_deconvolution_ace-cem_evaluation_metrics.tsv"
+DECONVOLUTETHIS.DESIGNS.CSV.FILE <- "/Users/leework/Documents/Research/projects/project_ace/data/raw/references/deconvolutethis_designs.csv"
+OUTPUT.DIR <- "/Users/leework/Documents/Research/projects/project_ace/data/processed/figures"
+ACE.HEX <- "#845EC2"
+DECONVOLUTETHIS.HEX <- "#E5CE23"
+COMMON.THEME <- theme(axis.title = element_text(size = 12),
+                      axis.text = element_text(size = 12),
+                      legend.title = element_text(size = 12),
+                      legend.text = element_text(size = 12))
+```
+
+## 03. Plot
+
+```{r}
+df.deconvolutethis <- read.csv(DECONVOLUTETHIS.DESIGNS.CSV.FILE)
+df.deconvolutethis$num_immunogenic_peptides <- df.deconvolutethis$num_true_positive_peptides
+df.deconvolutethis$group <- paste0(df.deconvolutethis$num_peptides, " peptides | ",
+                                   df.deconvolutethis$num_peptides_per_pool, " per pool | ",
+                                   df.deconvolutethis$num_coverage, "x coverage")
+df.evaluations <- read.csv(EVALUATION.RESULTS.TSV.FILE, sep = '\t')
+df.evaluations$group <- paste0(df.evaluations$num_peptides, " peptides | ", 
+                               df.evaluations$num_peptides_per_pool, " per pool | ",
+                               df.evaluations$num_coverage, "x coverage")
+df.plot <- df.evaluations %>%
+  dplyr::group_by(group, num_immunogenic_peptides) %>%
+  dplyr::summarise(num_total_pools = round(mean(predicted_total_pools)))
+df.plot$method <- "ACE"
+df.plot <- rbind(df.plot, data.frame(
+  group = df.deconvolutethis$group,
+  num_immunogenic_peptides = df.deconvolutethis$num_immunogenic_peptides,
+  num_total_pools = df.deconvolutethis$num_deconvolutethis_total_pools,
+  method = "DeconvoluteThis"
+))
+df.plot$num_immunogenic_peptides <- as.character(df.plot$num_immunogenic_peptides)
+df.plot$num_immunogenic_peptides <- factor(
+  df.plot$num_immunogenic_peptides,
+  levels = c(
+    "1","2","3","4","5","6","7","8","9","10","15","20","25","30","40"
+  )
+)
+df.plot$group <- factor(
+  df.plot$group,
+  levels = c(
+    "120 peptides | 12 per pool | 3x coverage",
+    "120 peptides | 15 per pool | 3x coverage",
+    "120 peptides | 20 per pool | 3x coverage",
+    "120 peptides | 24 per pool | 3x coverage",
+    "800 peptides | 16 per pool | 4x coverage",
+    "800 peptides | 20 per pool | 3x coverage",
+    "800 peptides | 20 per pool | 4x coverage",
+    "800 peptides | 32 per pool | 4x coverage",
+    "800 peptides | 32 per pool | 5x coverage",
+    "800 peptides | 50 per pool | 4x coverage",
+    "800 peptides | 50 per pool | 5x coverage",
+    "800 peptides | 80 per pool | 5x coverage",
+    "800 peptides | 80 per pool | 6x coverage",
+    "800 peptides | 100 per pool | 4x coverage",
+    "800 peptides | 100 per pool | 5x coverage",
+    "800 peptides | 100 per pool | 6x coverage",
+    "800 peptides | 160 per pool | 4x coverage",
+    "800 peptides | 160 per pool | 5x coverage"
+  )
+)
+barplot <- ggplot(df.plot, aes(x = num_immunogenic_peptides, y = num_total_pools, fill = method)) +
+  geom_bar(position="dodge", stat="identity", color = "black", width = 0.618) +
+  xlab("Number of Positive Peptides") + ylab("Total Number of Pools") +
+  guides(fill = guide_legend(title = "Method")) +
+  facet_wrap(~group, ncol = 3, scales = "free_y") +
+  scale_fill_manual(values = c("ACE" = ACE.HEX, "DeconvoluteThis" = DECONVOLUTETHIS.HEX)) +
+  theme_bw() + COMMON.THEME +
+  theme(panel.grid.minor.y = element_blank(),
+        strip.text = element_text(size = 12))
+print(barplot)
+ggsave(plot = barplot, filename = paste0(OUTPUT.DIR, "/supplementary_figure_deconvolutethis.pdf"),
+       width = 16, height = 16, dpi = 300)
+```

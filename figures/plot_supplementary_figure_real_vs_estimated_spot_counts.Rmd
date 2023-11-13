@@ -1,0 +1,149 @@
+---
+title: "Plot Supplementary Figure"
+output: html_notebook
+---
+
+## 01. Load libraries
+
+```{r}
+library(ggplot2)
+library(stringr)
+library(dplyr)
+library(ggpubr)
+```
+
+## 02. Define constants
+
+```{r}
+OUTPUT.DIR <- "/Users/leework/Documents/Research/projects/project_ace/data/processed/figures"
+PEPTIDES.SPOT.COUNTS.DIR <- "/Users/leework/Documents/Research/projects/project_ace/data/processed/02_benchmark_ace/01_benchmark_against_existing_tools/02_sampled_peptides_spot_counts/300immunogenic_30nonimmunogenic_1dispersion"
+EVALUATION.RESULTS.DIR <- "/Users/leework/Documents/Research/projects/project_ace/data/processed/02_benchmark_ace/01_benchmark_against_existing_tools/06_evaluation_results/300immunogenic_30nonimmunogenic_1dispersion_fnr0.00"
+METHODS <- c("ace-s_ace-cem",
+             "repeated_ace-em",
+             "strandberg_strandberg-background-subtracted",
+             "strandberg_strandberg_bayesian",
+             "strandberg_strandberg-empirical")
+METHODS.COLORS <- c("ace-s_cem" = "#845EC2",
+                    "repeated_em" = "#ABABAA",
+                    "sb-bgs" = "#7fc0e7",
+                    "sb-bay" = "#9CC25E",
+                    "sb-emp" = "#7fa8c1")
+```
+
+## 03. Load data
+
+```{r}
+df.evaluations.results <- data.frame()
+for (tsv.file in Sys.glob(paste0(EVALUATION.RESULTS.DIR, "/*evaluation_results.tsv"))) {
+  df.temp <- read.csv(tsv.file, sep = "\t")
+  df.evaluations.results <- rbind(df.evaluations.results, df.temp)
+}
+df.evaluations.results$method <- paste0(df.evaluations.results$configuration_method, "_", df.evaluations.results$deconvolution_method)
+
+df.peptides.spot.counts <- data.frame()
+for (tsv.file in Sys.glob(paste0(PEPTIDES.SPOT.COUNTS.DIR, "/800peptides*spot_counts.tsv"))) {
+  tsv.file.basename <- basename(tsv.file)
+  num.peptides <- as.integer(
+    str_remove(str_split(tsv.file.basename, pattern = "_", simplify = T)[1], pattern = "peptides")
+  )
+  num.peptides.immunogenic <- as.integer(
+    str_remove(str_split(tsv.file.basename, pattern = "_", simplify = T)[2], pattern = "immunogenic")
+  )
+  rep.id <- str_split(tsv.file.basename, pattern = "_", simplify = T)[3]
+  num.coverage <- as.integer(
+    str_remove(str_split(tsv.file.basename, pattern = "_", simplify = T)[4], pattern = "x")
+  )  
+  if ((num.peptides.immunogenic %in% c(5,10,20,40)) && (num.coverage == 3)) {
+    df.temp <- read.csv(tsv.file, sep = "\t")
+    df.temp$num_peptides <- num.peptides
+    df.temp$num_immunogenic_peptides <- num.peptides.immunogenic
+    df.temp$num_coverage <- num.coverage
+    df.temp$rep_id <- rep.id
+    df.peptides.spot.counts <- rbind(df.peptides.spot.counts, df.temp)
+  }
+}
+```
+
+## 04. Plot
+
+```{r}
+df.peptides.spot.counts.summary <- df.peptides.spot.counts %>%
+  dplyr::group_by(num_peptides, num_immunogenic_peptides, num_coverage, rep_id, peptide_id) %>%
+  dplyr::summarise(average_peptide_spot_count = mean(spot_count))
+
+df.peptides.spot.counts.summary.temp <- df.peptides.spot.counts.summary %>%
+  dplyr::filter(num_peptides == 800) %>%
+  dplyr::filter(num_immunogenic_peptides %in% c(5,10,20,40))
+
+df.evaluations.results.temp <- df.evaluations.results %>%
+  dplyr::filter(num_peptides == 800) %>%
+  dplyr::filter(num_immunogenic_peptides %in% c(5,10,20,40)) %>%
+  dplyr::filter(method %in% METHODS)
+
+df.plot <- data.frame()
+for (num.immunogenic.peptides in unique(df.evaluations.results.temp$num_immunogenic_peptides)) {
+  for (rep.id in unique(df.evaluations.results.temp$rep_id)) {
+    df.matched.1 <- df.peptides.spot.counts.summary.temp %>%
+      dplyr::filter(rep_id == rep.id) %>%
+      dplyr::filter(num_immunogenic_peptides == num.immunogenic.peptides)
+    df.matched.2 <- df.evaluations.results.temp %>%
+      dplyr::filter(rep_id == rep.id) %>%
+      dplyr::filter(num_immunogenic_peptides == num.immunogenic.peptides)
+    for (method in unique(df.matched.2$method)) {
+      df.matched.3 <- df.matched.2[df.matched.2$method == method,]
+      df.merged <- merge(df.matched.1, df.matched.3, by = "peptide_id")
+      df.merged$num_immunogenic_peptides <- num.immunogenic.peptides
+      df.merged$delta <- df.merged$average_peptide_spot_count - df.merged$peptide_spot_count
+      df.merged$predicted <- df.merged$peptide_spot_count
+      df.merged$ground_truth <- df.merged$average_peptide_spot_count
+      df.merged$rep_id <- df.merged$rep_id.x
+      df.plot <- rbind(df.plot, df.merged[,
+        c("peptide_id", "predicted", "delta", "binding", "ground_truth", 
+          "method", "rep_id", "num_immunogenic_peptides")]
+      )
+    }
+  }
+}
+
+df.plot$binding <- as.character(df.plot$binding)
+df.plot$method <- plyr::mapvalues(
+  x = df.plot$method,
+  from = c("ace-s_ace-cem",
+           "repeated_ace-em",
+           "strandberg_strandberg-background-subtracted",
+           "strandberg_strandberg_bayesian",
+           "strandberg_strandberg-empirical"),
+  to = c("ace-s_cem",
+         "repeated_em",
+         "sb-bgs",
+         "sb-bay",
+         "sb-emp")
+)
+df.plot$method <- factor(
+  df.plot$method,
+  levels = c("ace-s_cem",
+             "sb-bgs",
+             "sb-bay",
+             "sb-emp",
+             "repeated_em")
+)
+g <- ggplot(df.plot, aes(x = binding, y = predicted, fill = method)) +
+  stat_boxplot(geom = "errorbar", width = 0.35, position = position_dodge(width = 0.7)) +
+  geom_boxplot(outlier.shape = NA, width = 0.7) +
+  geom_hline(yintercept = 300, linetype = "dashed") +
+  geom_hline(yintercept = 30, linetype = "dashed") +
+  xlab("Immunogenicity (Ground Truth)") + ylab("Predicted Peptide Spot Count") + 
+  ggtitle(paste0(num.peptides, " peptides")) +
+  scale_fill_manual(values = METHODS.COLORS) +
+  scale_y_continuous(limits = c(0,400), breaks = c(0,30,100,200,300,400)) +
+  theme_bw() +
+  theme(axis.text = element_text(size = 14),
+        axis.title = element_text(size = 14),
+        strip.text = element_text(size = 14),
+        legend.position = "bottom",
+        legend.text = element_text(size = 14),
+        legend.title = element_text(size = 14)) + 
+  facet_wrap(~num_immunogenic_peptides, ncol = 4)
+ggsave(filename = paste0(OUTPUT.DIR, "/supplementary_figure_800peptides_estimated_peptide_counts.pdf"),
+       width = 16, height = 9, dpi = 300)
+```

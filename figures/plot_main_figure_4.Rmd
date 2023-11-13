@@ -1,0 +1,439 @@
+---
+title: "Plot Main Figure 3"
+output: html_notebook
+---
+
+## 01. Load libraries
+
+```{r}
+library(ggplot2)
+library(ggpubr)
+```
+
+## 02. Define constants
+
+```{r}
+OUTPUT.DIR <- "/Users/leework/Documents/Research/projects/project_ace/data/processed/figures"
+COMMON.THEME <- theme(axis.title = element_text(size = 14),
+                      axis.text = element_text(size = 14),
+                      legend.title = element_text(size = 14),
+                      legend.text = element_text(size = 14))
+GROUP.ALPHA <- 0.618
+DODGE.WIDTH <- 0.5
+ERRORBAR.WIDTH <- 0.384
+LINE.THICKNESS <- 0.384
+BOXPLOT.WIDTH <- 0.618
+LINE.CIRCLE.SIZE <- 2.62
+GROUP.COLORS <- c("ingroup" = "#7BAED1",
+                  "outgroup" = "#A4EE57")
+METHODS.COLORS <- c("ace-s" = "#845EC2",
+                    "ace" = "#D65DB1",
+                    "random" = "#FF9671",
+                    "repeated" = "#ABABAA")
+METHODS.ORDER <- c("ace-s",
+                   "ace",
+                   "random",
+                   "repeated")
+plot.empty <- ggplot()
+```
+
+## 03. Plot 3a and 3b
+
+```{r}
+# Step 2. Plot panels A and B
+INGROUP.CSV.FILE <- "/Users/leework/Documents/Research/projects/project_ace/data/processed/model_snapshot/ingroup_euclidean_sims.csv"
+OUTGROUP.CSV.FILE <- "/Users/leework/Documents/Research/projects/project_ace/data/processed/model_snapshot/outgroup_euclidean_sims.csv"
+df.ingroup <- read.csv(INGROUP.CSV.FILE)
+df.outgroup <- read.csv(OUTGROUP.CSV.FILE)
+df.not.finetuned <- rbind(
+  data.frame(
+    x = df.ingroup$ingroup_euclidean,
+    group = rep("ingroup", nrow(df.ingroup))
+  ),
+  data.frame(
+    x = df.outgroup$outgroup_euclidean,
+    group = rep("outgroup", nrow(df.outgroup))
+  )
+)
+df.finetuned <- rbind(
+  data.frame(
+    x = df.ingroup$fine_tuned_euclidean,
+    group = rep("ingroup", nrow(df.ingroup))
+  ),
+  data.frame(
+    x = df.outgroup$finetuned_outgroup_euclidean,
+    group = rep("outgroup", nrow(df.outgroup))
+  )
+)
+df.levenshtein <- rbind(
+  data.frame(
+    x = df.ingroup$levenshtein_euclidean,
+    group = rep("ingroup", nrow(df.ingroup))
+  ),
+  data.frame(
+    x = df.outgroup$levenshtein_euclidean,
+    group = rep("outgroup", nrow(df.outgroup))
+  )
+)
+plot.not.finedtuned <- ggplot(df.not.finetuned, aes(x = x, fill = group)) +
+  geom_density(alpha = GROUP.ALPHA) +
+  xlab("Euclidean Similarity") + ylab("Density") + ggtitle("Not Fine-tuned") +
+  scale_x_continuous(limits = c(0,1)) +
+  scale_y_continuous(expand = c(0,0)) +
+  scale_fill_manual(values = GROUP.COLORS) +
+  theme_pubr() + COMMON.THEME
+plot.finedtuned <- ggplot(df.finetuned, aes(x = x, fill = group)) +
+  geom_density(alpha = GROUP.ALPHA) +
+  xlab("Euclidean Similarity") + ylab("Density") + ggtitle("Fine-tuned") +
+  scale_x_continuous(limits = c(0,1)) +
+  scale_y_continuous(expand = c(0,0)) +
+  scale_fill_manual(values = GROUP.COLORS) +
+  theme_pubr() + COMMON.THEME
+plot.levenshtein <- ggplot(df.levenshtein, aes(x = x, fill = group)) +
+  geom_density(alpha = GROUP.ALPHA) +
+  xlab("Levenshtein Similarity") + ylab("Density") + ggtitle("Levenshtein") +
+  scale_x_continuous(limits = c(0,1)) +
+  scale_y_continuous(expand = c(0,0)) +
+  scale_fill_manual(values = GROUP.COLORS) +
+  theme_pubr() + COMMON.THEME
+```
+
+## 04. Plot 3c
+
+```{r}
+ERRORBAR.WIDTH <- 0.4
+BOXPLOT.WIDTH <- 0.8
+EVALUATION.RESULTS.DIR <- "/Users/leework/Documents/Research/projects/project_ace/data/processed/03_alanine_scanning/06_evaluation_results/300immunogenic_30nonimmunogenic_1dispersion_fnr0.00"
+df.evaluation.metrics <- data.frame()
+for (tsv.file in Sys.glob(paste0(EVALUATION.RESULTS.DIR, "/*evaluation_metrics.tsv"))) {
+  df.temp <- read.csv(tsv.file, sep = "\t")
+  df.temp$group <- paste0(df.temp$configuration_method, "_", df.temp$deconvolution_method)
+  df.temp$perc_immunogenic <- floor((df.temp$num_immunogenic_peptides / df.temp$num_peptides) * 100)
+  df.evaluation.metrics <- rbind(df.evaluation.metrics, df.temp)
+}
+df.evaluation.metrics$group <- plyr::mapvalues(
+  x = df.evaluation.metrics$group,
+  from = c("ace-s_ace-cem",
+           "ace_ace-cem",
+           "randomized_ace-cem",
+           "repeated_ace-empirical"),
+  to = c("ace-s",
+         "ace",
+         "random",
+         "repeated")
+)
+PlotPrecision <- function(df.evaluation.metrics, num.peptides, title) {
+  df.plot <- df.evaluation.metrics[df.evaluation.metrics$num_peptides == num.peptides,]
+  df.plot <- df.plot %>%
+    dplyr::group_by(group, perc_immunogenic) %>%
+    dplyr::summarise(
+      sd = sd(precision),
+      precision = mean(precision)
+    )
+  df.plot$perc_immunogenic <- as.character(df.plot$perc_immunogenic)
+  df.plot$perc_immunogenic <- factor(
+    df.plot$perc_immunogenic,
+    levels = c("1","5","10","15","20")
+  )
+  df.plot$group <- factor(
+    df.plot$group,
+    levels = METHODS.ORDER
+  )
+  p <- ggplot(df.plot, aes(x = perc_immunogenic, y = precision, fill = group)) +
+    geom_col(width = BOXPLOT.WIDTH, colour = "black", position = "dodge") + 
+    geom_errorbar(aes(ymin = precision - sd,
+                      ymax = ifelse(precision + sd > 1, 1, precision + sd)),
+                  width = ERRORBAR.WIDTH, position = position_dodge(BOXPLOT.WIDTH)) +
+    scale_y_continuous(limits = c(0,1), breaks = c(0.00, 0.25, 0.50, 0.75, 1.00), expand = c(0,0)) + 
+    xlab("Percentage of Positive Peptides") + ylab("Precision") + ggtitle(title) +
+    scale_fill_manual(values = METHODS.COLORS) +
+    theme_pubr() +
+    COMMON.THEME +
+    theme(plot.title = element_text(size = 12, hjust = 0.5),
+          panel.grid.major.x = element_blank(),
+          panel.grid.minor.y = element_blank())
+  return(p)
+}
+plot.90.peptides.precision <- PlotPrecision(
+  df.evaluation.metrics = df.evaluation.metrics,
+  num.peptides = 90,
+  title = "120 peptides"
+)
+plot.720.peptides.precision <- PlotPrecision(
+  df.evaluation.metrics = df.evaluation.metrics,
+  num.peptides = 720,
+  title = "720 peptides"
+)
+panel.c <- ggarrange(plotlist = list(plot.90.peptides.precision, plot.720.peptides.precision),
+  nrow = 2, ncol = 1, align = "hv", common.legend = T
+)
+print(panel.c)
+
+# Sensitivity
+for (num.peptides in c(90, 720)) {
+  df.temp <- df.evaluation.metrics[df.evaluation.metrics$num_peptides == num.peptides,]
+  df.temp <- df.temp %>%
+    dplyr::group_by(group, perc_immunogenic) %>%
+    dplyr::summarise(
+      sd = sd(sensitivity),
+      sensitivity = mean(sensitivity)
+    )
+  print(df.temp)
+}
+```
+
+## 05. Plot 3d
+
+```{r}
+PlotNumTotalPools <- function(df.evaluation.metrics,
+                              num.peptides, 
+                              num.peptides.per.pool,
+                              num.coverage,
+                              ymax,
+                              breaks,
+                              title) {
+  df.plot <- df.evaluation.metrics[df.evaluation.metrics$num_peptides == num.peptides,]
+  df.plot <- df.plot %>%
+    dplyr::group_by(group, perc_immunogenic) %>%
+    dplyr::summarise(
+      sd = sd(predicted_total_pools),
+      predicted_total_pools = mean(predicted_total_pools)
+    )
+  df.plot$perc_immunogenic <- as.numeric(df.plot$perc_immunogenic)
+  df.plot$group <- factor(
+    df.plot$group,
+    levels = METHODS.ORDER
+  )
+  num.first.round.pools <- ceiling(num.peptides / num.peptides.per.pool) * num.coverage
+  plot <- ggplot(df.plot, aes(perc_immunogenic, predicted_total_pools, colour = group)) +
+    geom_line(size = LINE.THICKNESS, linetype = "dashed") +
+    geom_hline(yintercept = num.first.round.pools,  linetype = "dashed") +
+    geom_errorbar(aes(ymin = predicted_total_pools - sd, ymax = predicted_total_pools + sd), 
+                  width = 0.5, size = LINE.THICKNESS) +
+    geom_point(size = LINE.CIRCLE.SIZE) +
+    xlab("Percentage of Positive Peptides") + ylab("Number of Total Pools") + ggtitle(title) +
+    scale_color_manual(values = METHODS.COLORS) +
+    scale_x_continuous(limits = c(0.5,20.5), breaks = c(1,5,10,15,20)) +
+    scale_y_continuous(limits = c(num.first.round.pools, ymax), breaks = breaks, expand = c(0,0)) +
+    theme_pubr() + 
+    COMMON.THEME +
+    theme(plot.title = element_text(size = 12, hjust = 0.5),
+          panel.grid.major.x = element_blank(),
+          panel.grid.minor.y = element_blank())  
+  return(plot)
+}
+plot.90.num.total.pools <- PlotNumTotalPools(
+  df.evaluation.metrics = df.evaluation.metrics,
+  num.peptides = 90,
+  num.peptides.per.pool = 9,
+  num.coverage = 3,
+  ymax = 120,
+  breaks = c(30,60,90,120),
+  title = "90 peptides"
+)
+plot.720.num.total.pools <- PlotNumTotalPools(
+  df.evaluation.metrics = df.evaluation.metrics,
+  num.peptides = 720,
+  num.peptides.per.pool = 9,
+  num.coverage = 3,
+  ymax = 900,
+  breaks = c(240,500,700,900),
+  title = "720 peptides"
+)
+panel.d <- ggarrange(plotlist = list(plot.90.num.total.pools, plot.720.num.total.pools),
+  nrow = 1, ncol = 2, align = "hv", common.legend = T
+)
+print(panel.d)
+```
+
+## 06. Plot 3e
+
+```{r}
+ERRORBAR.WIDTH <- 0.2
+BOXPLOT.WIDTH <- 0.4
+EVALUATION.RESULTS.DIR <- "/Users/leework/Documents/Research/projects/project_ace/data/processed/04_real_world_datasets/tan_2021/06_evaluation_results/300immunogenic_30nonimmunogenic_1dispersion_fnr0.00"
+df.evaluation.metrics <- data.frame()
+for (tsv.file in Sys.glob(paste0(EVALUATION.RESULTS.DIR, "/*evaluation_metrics.tsv"))) {
+  df.temp <- read.csv(tsv.file, sep = "\t")
+  df.temp$group <- paste0(df.temp$configuration_method, "_", df.temp$deconvolution_method)
+  df.temp$perc_immunogenic <- floor((df.temp$num_immunogenic_peptides / df.temp$num_peptides) * 100)
+  df.evaluation.metrics <- rbind(df.evaluation.metrics, df.temp)
+}
+df.evaluation.metrics$group <- plyr::mapvalues(
+  x = df.evaluation.metrics$group,
+  from = c("ace-s_ace-cem",
+           "ace_ace-cem",
+           "randomized_ace-cem",
+           "repeated_ace-empirical"),
+  to = c("ace-s",
+         "ace",
+         "random",
+         "repeated")
+)
+PlotPrecision <- function(df.evaluation.metrics) {
+  df.plot <- df.evaluation.metrics %>%
+    dplyr::group_by(group, perc_immunogenic) %>%
+    dplyr::summarise(
+      sd = sd(precision),
+      precision = mean(precision)
+    )
+  df.plot$group <- factor(
+    df.plot$group,
+    levels = METHODS.ORDER
+  )
+  p <- ggplot(df.plot, aes(x = group, y = precision, fill = group)) +
+    geom_col(width = BOXPLOT.WIDTH, colour = "black", position = "dodge") + 
+    geom_errorbar(aes(ymin = precision - sd,
+                      ymax = ifelse(precision + sd > 1, 1, precision + sd)),
+                  width = ERRORBAR.WIDTH, position = position_dodge(BOXPLOT.WIDTH)) +
+    scale_y_continuous(limits = c(0,1), breaks = c(0.00, 0.25, 0.50, 0.75, 1.00), expand = c(0,0)) + 
+    xlab("Percentage of Positive Peptides") + ylab("Precision") +
+    scale_fill_manual(values = METHODS.COLORS) +
+    theme_pubr() +
+    COMMON.THEME +
+    theme(axis.text.x = element_text(size = 14, angle = 45, hjust = 1, vjust = 1),
+          panel.grid.major.x = element_blank(),
+          panel.grid.minor.y = element_blank())
+  return(p)
+}
+PlotNumTotalPools <- function(df.evaluation.metrics, num.first.round.pools) {
+  df.plot <- df.evaluation.metrics
+  df.plot$group <- factor(
+    df.plot$group,
+    levels = METHODS.ORDER
+  )
+  p <- ggplot(df.plot, aes(x = group, y = predicted_total_pools, fill = group)) + 
+    geom_hline(yintercept = num.first.round.pools, linetype = "dashed") +
+    stat_boxplot(geom = "errorbar", width = ERRORBAR.WIDTH) +
+    geom_boxplot(outlier.shape = NA, width = 0.5) +
+    geom_jitter(alpha = 0.05, width = 0.1) +
+    xlab("") + ylab("Number of Total Pools") + 
+    scale_fill_manual(values = METHODS.COLORS) +
+    scale_y_continuous(limits = c(50, 200), breaks = c(54,100,150,200), expand = c(0,0)) +
+    theme_pubr() + 
+    COMMON.THEME +
+    theme(axis.text.x = element_text(size = 14, angle = 45, hjust = 1, vjust = 1))
+  return(p)
+}
+plot.precision <- PlotPrecision(
+  df.evaluation.metrics = df.evaluation.metrics
+)
+plot.num.total.pools <- PlotNumTotalPools(
+  df.evaluation.metrics = df.evaluation.metrics,
+  num.first.round.pools = 54
+)
+panel.e <- ggarrange(plotlist = list(plot.precision, plot.num.total.pools),
+                     nrow = 1, align = "hv")
+df.evaluation.metrics %>% 
+  dplyr::group_by(group) %>%
+  dplyr::summarise(
+    sd = sd(sensitivity),
+    mean_sensitivity = mean(sensitivity)
+  )
+```
+
+## 07. Plot 3f
+
+```{r}
+ERRORBAR.WIDTH <- 0.2
+BOXPLOT.WIDTH <- 0.4
+EVALUATION.RESULTS.DIR <- "/Users/leework/Documents/Research/projects/project_ace/data/processed/04_real_world_datasets/cameron_2013/06_evaluation_results/300immunogenic_30nonimmunogenic_1dispersion_fnr0.00"
+df.evaluation.metrics <- data.frame()
+for (tsv.file in Sys.glob(paste0(EVALUATION.RESULTS.DIR, "/*evaluation_metrics.tsv"))) {
+  df.temp <- read.csv(tsv.file, sep = "\t")
+  df.temp$group <- paste0(df.temp$configuration_method, "_", df.temp$deconvolution_method)
+  df.temp$perc_immunogenic <- floor((df.temp$num_immunogenic_peptides / df.temp$num_peptides) * 100)
+  df.evaluation.metrics <- rbind(df.evaluation.metrics, df.temp)
+}
+df.evaluation.metrics$group <- plyr::mapvalues(
+  x = df.evaluation.metrics$group,
+  from = c("ace-s_ace-cem",
+           "ace_ace-cem",
+           "randomized_ace-cem",
+           "repeated_ace-empirical"),
+  to = c("ace-s",
+         "ace",
+         "random",
+         "repeated")
+)
+PlotPrecision <- function(df.evaluation.metrics) {
+  df.plot <- df.evaluation.metrics %>%
+    dplyr::group_by(group, perc_immunogenic) %>%
+    dplyr::summarise(
+      sd = sd(precision),
+      precision = mean(precision)
+    )
+  df.plot$group <- factor(
+    df.plot$group,
+    levels = METHODS.ORDER
+  )
+  p <- ggplot(df.plot, aes(x = group, y = precision, fill = group)) +
+    geom_col(width = BOXPLOT.WIDTH, colour = "black", position = "dodge") + 
+    geom_errorbar(aes(ymin = precision - sd,
+                      ymax = ifelse(precision + sd > 1, 1, precision + sd)),
+                  width = ERRORBAR.WIDTH, position = position_dodge(BOXPLOT.WIDTH)) +
+    scale_y_continuous(limits = c(0,1), breaks = c(0.00, 0.25, 0.50, 0.75, 1.00), expand = c(0,0)) + 
+    xlab("Percentage of Positive Peptides") + ylab("Precision") +
+    scale_fill_manual(values = METHODS.COLORS) +
+    theme_pubr() +
+    COMMON.THEME +
+    theme(axis.text.x = element_text(size = 14, angle = 45, hjust = 1, vjust = 1),
+          panel.grid.major.x = element_blank(),
+          panel.grid.minor.y = element_blank())
+  return(p)
+}
+PlotNumTotalPools <- function(df.evaluation.metrics, num.first.round.pools) {
+  df.plot <- df.evaluation.metrics
+  df.plot$group <- factor(
+    df.plot$group,
+    levels = METHODS.ORDER
+  )
+  p <- ggplot(df.plot, aes(x = group, y = predicted_total_pools, fill = group)) + 
+    geom_hline(yintercept = num.first.round.pools, linetype = "dashed") +
+    stat_boxplot(geom = "errorbar", width = ERRORBAR.WIDTH) +
+    geom_boxplot(outlier.shape = NA, width = 0.5) +
+    geom_jitter(alpha = 0.05, width = 0.1) +
+    xlab("") + ylab("Number of Total Pools") + 
+    scale_fill_manual(values = METHODS.COLORS) +
+    scale_y_continuous(limits = c(18, 36), breaks = c(18,24,30,36), expand = c(0,0)) +
+    theme_pubr() + 
+    COMMON.THEME +
+    theme(axis.text.x = element_text(size = 14, angle = 45, hjust = 1, vjust = 1))
+  return(p)
+}
+plot.precision <- PlotPrecision(
+  df.evaluation.metrics = df.evaluation.metrics
+)
+plot.num.total.pools <- PlotNumTotalPools(
+  df.evaluation.metrics = df.evaluation.metrics,
+  num.first.round.pools = 18
+)
+panel.f <- ggarrange(plotlist = list(plot.precision, plot.num.total.pools),
+                     nrow = 1, align = "hv")
+df.evaluation.metrics %>% 
+  dplyr::group_by(group) %>%
+  dplyr::summarise(
+    sd = sd(sensitivity),
+    mean_sensitivity = mean(sensitivity)
+  )
+```
+
+## 08. Merge all panels
+
+```{r}
+panels.ab <- ggarrange(plotlist = list(plot.levenshtein, plot.not.finedtuned, plot.finedtuned), nrow = 1, align = "hv", common.legend = T)
+panels.cd <- ggarrange(plotlist = list(plot.empty, panel.c, panel.d), widths = c(2,4,6), nrow = 1, align = "hv")
+panels.ef <- ggarrange(plotlist = list(panel.e, panel.f, plot.empty), widths = c(4,4,4), nrow = 1, align = "hv", common.legend = T)
+main.figure.4 <- ggarrange(
+  plotlist = list(panels.ab,
+                  panels.cd,
+                  panels.ef),
+  nrow = 3,
+  heights = c(2.5,6,3.5),
+  align = "hv"
+)
+ggsave(filename = paste0(OUTPUT.DIR, '/main_figure_4.pdf'),
+       plot = main.figure.4,
+       width = 16, height = 16,
+       dpi = 300)
+```
