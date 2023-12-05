@@ -130,6 +130,10 @@ PlotPrecision <- function(df.evaluation.metrics, num.peptides, title) {
       sd = sd(precision),
       precision = mean(precision)
     )
+  print(df.plot %>%
+          dplyr::group_by(group) %>%
+          dplyr::summarise(mean_precision = mean(precision)))
+
   df.plot$perc_immunogenic <- as.character(df.plot$perc_immunogenic)
   df.plot$perc_immunogenic <- factor(
     df.plot$perc_immunogenic,
@@ -277,6 +281,9 @@ PlotPrecision <- function(df.evaluation.metrics) {
       sd = sd(precision),
       precision = mean(precision)
     )
+  print(df.plot %>%
+          dplyr::group_by(group) %>%
+          dplyr::summarise(mean_precision = mean(precision)))
   df.plot$group <- factor(
     df.plot$group,
     levels = METHODS.ORDER
@@ -363,6 +370,9 @@ PlotPrecision <- function(df.evaluation.metrics) {
       sd = sd(precision),
       precision = mean(precision)
     )
+  print(df.plot %>%
+        dplyr::group_by(group) %>%
+        dplyr::summarise(mean_precision = mean(precision)))
   df.plot$group <- factor(
     df.plot$group,
     levels = METHODS.ORDER

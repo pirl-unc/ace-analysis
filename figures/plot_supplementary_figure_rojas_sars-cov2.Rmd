@@ -6,7 +6,9 @@ output: html_notebook
 ## 01. Load libraries
 
 ```{r}
+library(dplyr)
 library(ggplot2)
+library(ggpubr)
 ```
 
 ## 02. Define constants
@@ -63,12 +65,16 @@ PlotPrecision <- function(df.evaluation.metrics) {
     dplyr::group_by(group, perc_immunogenic) %>%
     dplyr::summarise(
       sd = sd(precision),
-      precision = mean(precision)
+      precision = mean(precision),
+      recall = mean(sensitivity)
     )
   df.plot$group <- factor(
     df.plot$group,
     levels = METHODS.ORDER
   )
+  print(df.plot %>%
+        dplyr::group_by(group) %>%
+        dplyr::summarise(mean_precision = mean(precision)))
   p <- ggplot(df.plot, aes(x = group, y = precision, fill = group)) +
     geom_col(width = BOXPLOT.WIDTH, colour = "black", position = "dodge") + 
     geom_errorbar(aes(ymin = precision - sd,
@@ -149,12 +155,16 @@ PlotPrecision <- function(df.evaluation.metrics) {
     dplyr::group_by(group, perc_immunogenic) %>%
     dplyr::summarise(
       sd = sd(precision),
-      precision = mean(precision)
+      precision = mean(precision),
+      recall = mean(sensitivity)
     )
   df.plot$group <- factor(
     df.plot$group,
     levels = METHODS.ORDER
   )
+  print(df.plot %>%
+      dplyr::group_by(group) %>%
+      dplyr::summarise(mean_precision = mean(precision)))
   p <- ggplot(df.plot, aes(x = group, y = precision, fill = group)) +
     geom_col(width = BOXPLOT.WIDTH, colour = "black", position = "dodge") + 
     geom_errorbar(aes(ymin = precision - sd,
