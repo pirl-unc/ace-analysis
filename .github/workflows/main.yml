@@ -42,7 +42,7 @@ jobs:
         pip install levenshtein
         pip install torch
         pip install transformers==4.30.2
-        pip install ace-elispot==0.1.1.0
+        pip install ace-elispot==0.1.1.1
         conda install pylint
         conda install coveralls
         conda install pytest
