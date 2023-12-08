@@ -11,52 +11,17 @@ pip install . --verbose
 ## 02. Repository Structure
 ```
 ├── README.md
-├── examples
-│   └── run_example_experiment.py               # acesim example
-├── experiments                                 # experiment codes 
-│   ├── 01_benchmark_ace_vs_naive_approach
-│   ├── 02_benchmark_ace_features
-│   ├── 03_benchmark_speed_and_memory
-│   └── 04_generate_resource_configurations
-├── pyproject.toml
-├── src                                         # acesim source codes
+├── experiments                                   # experiment codes 
+│   ├── 01_precision_recall_violations_iterations
+│   ├── 02_benchmark_ace
+│   ├── 03_alanine_scanning
+│   ├── 04_real_world_datasets
+│   ├── 05_design_exploration
+│   └── 06_benchmark_ace_runtime_memory
+├── figures                                       # codes used to generate figures
+├── src                                           # acesim source codes
 │   └── acesim
-├── test                                        # acesim unit tests
-│   ├── data
-│   │   └── iedb_mmer_all.csv
-│   ├── data.py
-│   └── test_experiment.py
+├── tables                                        # codes used to generate tables
+├── test                                          # acesim unit tests
 └── unittest.sh
 ```
-
-## 03. Experiments
-
-* `01_benchmark_ace_vs_naive_approach` \
-Benchmark `ACE` against a naive approach (i.e. random assignment). \
-Evaluation metrics: number of total pools, sensitivity, specificity, precision.
-  * With and without random experimental effects
-    * `mu_immunogenic`
-    * `mu_nonimmunogenic`
-    * `dispersion_factor`
-    * `method`
-    * `alpha`
-  * With and without sequence similarity feature (Alanine scanning)
-<br/><br/>
-
-* `02_benchmark_ace_features` \
-Benchmark various `ACE` features. \
-Evaluation metrics: number of total pools, sensitivity, specificity, precision.
-  * `--mode`
-  * `--golfy-max-iters`
-  * `--num-peptides-per-pool`
-  * `--num-coverage`
-  * `--sequence-similarity-threshold`
-<br/><br/>
-
-* `03_benchmark_speed_and_memory` \
-Benchmark `ACE` runtime and peak memory usage.
-<br/><br/>
-
-* `04_generate_resource_configurations` \
-Generate all precomputed `ACE` ELISpot configurations.
-<br/></br>
